@@ -1,4 +1,5 @@
 import { input, initInput } from "./input.js";
+import { createCamera, updateCamera } from "./camera.js";
 import { startGame } from "./game.js";
 import { updateFlightPhysics } from "./flightPhysics.js";
 import { createWillieWagtail, updateBird } from "./bird.js";
