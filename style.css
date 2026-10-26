@@ -3,13 +3,49 @@ body {
   min-height: 100dvh;
   display: grid;
   place-items: center;
-  background: #111;
+  background: #8DA789;
 }
 
 #gameCanvas {
   display: block;
-  width: min(640px, 90vw, 90vh);
+  width: 100%;
   height: auto;
   image-rendering: pixelated;
   background: #87ceeb;
+}
+
+#game {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: min(640px, 94vw, calc(100dvh - 216px));
+}
+
+#keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 56px);
+  gap: 8px;
+}
+
+#keypad kbd {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  box-sizing: border-box;
+  background: #222;
+  color: #fff;
+  border: 1px solid #555;
+  border-radius: 6px;
+  font-family: monospace;
+  font-size: 20px;
+  user-select: none;
+}
+
+
+#keypad kbd.pitch {
+  background: #304735;
+  border-color: #63876A;
 }
