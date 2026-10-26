@@ -12,9 +12,10 @@ export function createWillieWagtail() {
     leftWing: "rest", rightWing: "rest",
     leftStrokePhase: 0, rightStrokePhase: 0,
     leftFlapCount: 0, rightFlapCount: 0,
+    totalFlaps: 0, flapFeedbackTimer: 0, airspeed: 0,
     leftWingTimer: 0, rightWingTimer: 0,
     grounded: true, perchedOn: null,
-    glide: false, hopTimer: 0, hopAnimation: 0,
+    glide: false, hopTimer: 0, hopAnimation: 0, peckAnimation: 0,
     tailPhase: 0, inventory: { grass: 0, twig: 0, web: 0, insects: 0 },
     message: "Find a perch, forage and build a nest", messageTime: 5
   };
@@ -30,7 +31,7 @@ function applyWingEvent(bird, number) {
   if (position === "raised") bird[phaseKey] = 1;
   else if (position === "middle") bird[phaseKey] = bird[phaseKey] === 1 ? 2 : 0;
   else if (position === "lowered") {
-    if (bird[phaseKey] === 2) bird[`${side}FlapCount`] += 1;
+    if (bird[phaseKey] >= 1) bird[`${side}FlapCount`] += 1; // Middle is optional for a more forgiving stroke
     bird[phaseKey] = 0;
   }
 }
@@ -60,6 +61,8 @@ export function updateBird(bird, controls, dt) {
   bird.glide = controls.pressed.has("Numpad4") && controls.pressed.has("Numpad6");
   bird.tailPhase += dt * (bird.grounded ? 11 : 7);
   bird.messageTime = Math.max(0, bird.messageTime - dt);
+  bird.flapFeedbackTimer = Math.max(0, bird.flapFeedbackTimer - dt);
+  bird.peckAnimation = Math.max(0, bird.peckAnimation - dt);
   hopOnGround(bird, controls, dt);
 }
 
