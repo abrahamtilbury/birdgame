@@ -1,6 +1,6 @@
 // Top-down painter. The bird stays centre-screen; ground and trees use world x/y.
 // Altitude affects occlusion and gliding, NOT the bird's screen-space y coordinate.
-import { getTreeSection } from "./world.js";
+import { getTreeSection, GROUND_TILE } from "./world.js";
 
 const TWO_PI = Math.PI * 2;
 function disk(ctx, x, y, r, fill) {
@@ -19,25 +19,42 @@ function polygon(ctx, points, fill, stroke = null) {
   if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1.5; ctx.stroke(); }
 }
 function drawGround(ctx, world, camera) {
+  const tile = GROUND_TILE;
+  const visibleWidth = camera.width / camera.zoom;
+  const visibleHeight = camera.height / camera.zoom;
   ctx.fillStyle = world.groundColour;
-  // Keep grass visible even when the centred camera looks beyond a world edge.
-  ctx.fillRect(camera.x, camera.y, camera.width, camera.height);
-  ctx.fillRect(0, 0, world.width, world.height);
-  // Stable grass speckles; never reseed randomly each frame.
-  const tile = 32;
+  ctx.fillRect(camera.x, camera.y, visibleWidth, visibleHeight);
   const startX = Math.max(0, Math.floor(camera.x / tile) - 1);
-  const endX = Math.min(Math.ceil(world.width / tile), Math.ceil((camera.x + camera.width) / tile) + 1);
+  const endX = Math.min(Math.ceil(world.width / tile),
+    Math.ceil((camera.x + visibleWidth) / tile) + 1);
   const startY = Math.max(0, Math.floor(camera.y / tile) - 1);
-  const endY = Math.min(Math.ceil(world.height / tile), Math.ceil((camera.y + camera.height) / tile) + 1);
+  const endY = Math.min(Math.ceil(world.height / tile),
+    Math.ceil((camera.y + visibleHeight) / tile) + 1);
   for (let ix = startX; ix <= endX; ix++) for (let iy = startY; iy <= endY; iy++) {
     const seed = ((ix * 67 + iy * 131) % 107 + 107) % 107;
-    if (seed % 3) continue;
-    const x = ix * tile + 7 + seed % 13;
-    const y = iy * tile + 10 + seed % 9;
-    segment(ctx, x, y + 4, x + 2, y - 1, 1.5, seed % 2 ? "#739F75" : "#A1B99A");
-    segment(ctx, x + 4, y + 3, x + 6, y, 1, "#6C986B");
+    const x = ix * tile, y = iy * tile;
+    // Stable, low-contrast square tiles rather than randomly flickering ground.
+    ctx.fillStyle = seed % 5 === 0 ? 'rgba(47,93,54,.055)' :
+      seed % 3 === 0 ? 'rgba(221,231,176,.05)' : 'rgba(0,0,0,0)';
+    ctx.fillRect(x, y, tile, tile);
+    if (world.searchedPatches.has(`${ix},${iy}`)) {
+      // Pecked / disturbed square: permanently changes after Space is pressed.
+      ctx.fillStyle = '#83775C';
+      ctx.fillRect(x + 1, y + 1, tile - 2, tile - 2);
+      ctx.fillStyle = '#9E896A';
+      ctx.fillRect(x + 4, y + 5, tile - 8, tile - 10);
+      ctx.strokeStyle = '#5B634B'; ctx.lineWidth = 2;
+      ctx.strokeRect(x + 2, y + 2, tile - 4, tile - 4);
+      segment(ctx, x + 7, y + 13, x + 22, y + 10, 1.7, '#665D4D');
+      segment(ctx, x + 10, y + 23, x + 24, y + 20, 1.3, '#665D4D');
+    } else if (seed % 3 === 0) {
+      segment(ctx, x + 8, y + 21, x + 10, y + 15, 1.5,
+        seed % 2 ? '#739F75' : '#A1B99A');
+      segment(ctx, x + 13, y + 23, x + 15, y + 19, 1, '#6C986B');
+    }
   }
 }
+
 function drawShrubs(ctx, world) {
   for (const shrub of world.shrubs) {
     disk(ctx, shrub.x + 4, shrub.y + 6, shrub.radius * 1.1, "rgba(24,51,36,.17)");
@@ -70,18 +87,23 @@ function drawResources(ctx, world, altitude) {
 }
 function drawCanopy(ctx, tree, radius, alpha) {
   ctx.save(); ctx.globalAlpha *= alpha;
-  // Deterministic patch placement and non-circular silhouette.
-  const colours = ["#35663E", "#478252", "#568C57", "#679665", "#3D7350"];
-  disk(ctx, tree.x, tree.y, radius * 0.88, colours[0]);
-  for (let i = 0; i < 11; i++) {
+  const colours = ['#35663E', '#478252', '#568C57', '#679665', '#3D7350'];
+  disk(ctx, tree.x, tree.y, radius * 0.78, colours[0]);
+  const clusters = Math.min(30, Math.round(12 + tree.scale * 6));
+  for (let i = 0; i < clusters; i++) {
     const angle = i * 2.39996 + tree.variant;
-    const offset = radius * (0.25 + 0.24 * (i % 3) / 2);
-    const rx = tree.x + Math.cos(angle) * offset;
-    const ry = tree.y + Math.sin(angle) * offset;
-    disk(ctx, rx, ry, radius * (0.28 + 0.05 * (i % 4)), colours[i % colours.length]);
+    const spread = radius * (0.28 + 0.24 * (i % 4) / 3);
+    const cx = tree.x + Math.cos(angle) * spread;
+    const cy = tree.y + Math.sin(angle) * spread;
+    const size = radius * (0.24 + 0.07 * (i % 5));
+    ctx.fillStyle = colours[i % colours.length];
+    // Slightly angular clusters give a readable 2D-tile-game silhouette.
+    ctx.fillRect(cx - size * 0.65, cy - size * 0.65, size * 1.3, size * 1.3);
+    disk(ctx, cx, cy, size * 0.48, colours[(i + 1) % colours.length]);
   }
   ctx.restore();
 }
+
 function drawTrunk(ctx, tree, radius) {
   disk(ctx, tree.x + 5, tree.y + 6, radius + 5, "rgba(28,37,24,.20)");
   disk(ctx, tree.x, tree.y, radius + 2, "#5F5E4D");
@@ -96,14 +118,27 @@ function drawBranch(ctx, tree, branch, alpha) {
   segment(ctx, sx + 2, sy + 3, ex + 2, ey + 3, branch.width + 4, "rgba(26,39,29,.23)");
   segment(ctx, sx, sy, ex, ey, branch.width, "#8F826A");
   segment(ctx, sx, sy, ex, ey, branch.width * .42, "#D4C9A7");
+  for (const fork of branch.forks || []) {
+    segment(ctx, tree.x + fork.x1, tree.y + fork.y1,
+      tree.x + fork.x2, tree.y + fork.y2, fork.width + 2,
+      'rgba(26,39,29,.20)');
+    segment(ctx, tree.x + fork.x1, tree.y + fork.y1,
+      tree.x + fork.x2, tree.y + fork.y2, fork.width,
+      '#B7AA8B');
+  }
   for (const p of branch.perchPoints) {
     disk(ctx, p.x, p.y, 5, "rgba(251,246,213,.24)");
     disk(ctx, p.x, p.y, 2, "#F3DD95");
   }
   ctx.restore();
 }
-function drawTrees(ctx, world, bird) {
+function drawTrees(ctx, world, bird, camera) {
   for (const tree of world.trees) {
+    const margin = tree.canopy.radius + 100;
+    if (tree.x < camera.x - margin ||
+        tree.x > camera.x + camera.width / camera.zoom + margin ||
+        tree.y < camera.y - margin ||
+        tree.y > camera.y + camera.height / camera.zoom + margin) continue;
     const z = bird.altitude;
     const section = getTreeSection(tree, z);
     // Ground shadow anchors the tree as camera height changes.
@@ -140,7 +175,6 @@ function drawWing(ctx, side, state, bird) {
   const isActive = bird[`${side < 0 ? "left" : "right"}WingTimer`] > 0;
   if (!isActive && !isMiddleHeld) {
     polygon(ctx, [[side * 7, -7], [side * 17, -6], [side * 13, 19], [side * 8, 8]], "#1D2934");
-    segment(ctx, side * 12, -3, side * 13, 12, 2, "#F1F0E8");
     return;
   }
   const positions = {
@@ -150,7 +184,6 @@ function drawWing(ctx, side, state, bird) {
   const x = distance * side;
   polygon(ctx, [[side * 10, -11], [x * .82, ty - 13], [x, ty],
     [x * .86, ty + 11], [side * 10, 12]], "#242C37", "#17222C");
-  segment(ctx, side * 20, -1, x * .78, ty + 2, 4, "#F4F3E9");
 }
 function drawBird(ctx, bird, x, y, isMate = false) {
   ctx.save();
@@ -165,12 +198,14 @@ function drawBird(ctx, bird, x, y, isMate = false) {
   segment(ctx, 11 + wag, 44, 4 + wag, 17, 1.4, "#DFE1D8");
   drawWing(ctx, -1, bird.leftWing, bird);
   drawWing(ctx, 1, bird.rightWing, bird);
-  // White undersides peek along the flanks (not on the black back).
-  disk(ctx, -9, 8, 7, "#D6D9D0");
-  disk(ctx, 9, 8, 7, "#D6D9D0");
-  ctx.fillStyle = "#24303A";
-  ctx.beginPath(); ctx.ellipse(0, 2, 12, 22, 0, 0, TWO_PI); ctx.fill();
-  const pitchHead = bird.pitch === "forward" ? -10 : bird.pitch === "backward" ? 9 : 0;
+  // The white patch is on the breast/belly, NOT the wings.
+  ctx.fillStyle = '#F1F0E6';
+  ctx.beginPath(); ctx.ellipse(0, 10, 10.3, 15, 0, 0, TWO_PI); ctx.fill();
+  // Dark upper back leaves the lower white belly exposed on this top-down sprite.
+  ctx.fillStyle = '#24303A';
+  ctx.beginPath(); ctx.ellipse(0, -5, 11.4, 15, 0, 0, TWO_PI); ctx.fill();
+  const pitchHead = (bird.pitch === "forward" ? -10 : bird.pitch === "backward" ? 9 : 0) -
+    (bird.peckAnimation > 0 ? 7 : 0);
   const headY = -21 + pitchHead;
   disk(ctx, 0, headY, 12, "#202B35");
   // Distinctive white eyebrow arcs.
@@ -190,9 +225,10 @@ function drawOverheadFoliage(ctx, world, bird, camera) {
     const d = Math.hypot(bird.x - tree.x, bird.y - tree.y);
     if (d > tree.canopy.radius) continue;
     // Overhead leaves are translucent so the pilot and HUD stay readable.
-    ctx.save(); ctx.globalAlpha = 0.19;
-    drawCanopy(ctx, { ...tree, x: tree.x - camera.x, y: tree.y - camera.y },
-      tree.canopy.radius, 1);
+    ctx.save(); ctx.globalAlpha = 0.16;
+    ctx.scale(camera.zoom, camera.zoom);
+    ctx.translate(-camera.x, -camera.y);
+    drawCanopy(ctx, tree, tree.canopy.radius, 1);
     ctx.restore();
   }
 }
@@ -208,13 +244,14 @@ function drawVignette(ctx, width, height, bird) {
 function drawHud(ctx, bird, world) {
   const speed = Math.hypot(bird.velocityX, bird.velocityY);
   ctx.save();
-  ctx.fillStyle = "rgba(16,33,23,0.84)"; ctx.fillRect(8, 8, 334, 174);
+  ctx.fillStyle = "rgba(16,33,23,0.84)"; ctx.fillRect(8, 8, 344, 194);
   ctx.fillStyle = "#FFFFFF"; ctx.font = "13px monospace"; ctx.textBaseline = "top";
   const lines = [
     `ALT ${bird.altitude.toFixed(2)} m | VZ ${bird.velocityZ.toFixed(2)} m/s`,
     `Speed ${speed.toFixed(0)} px/s | Heading ${(bird.heading * 180 / Math.PI).toFixed(0)}°`,
     `Pitch ${bird.pitch} | Glide ${bird.glide ? "ON" : "off"}`,
     `Wing L ${bird.leftWing} / R ${bird.rightWing}`,
+    `FLAPS ${bird.totalFlaps || 0}  | AIRSPEED ${(bird.airspeed || 0).toFixed(0)}`,
     `Position ${bird.x.toFixed(0)}, ${bird.y.toFixed(0)}`,
     bird.perchedOn ? `PERCHED ${bird.perchedOn.branchId}` : bird.grounded ? "GROUND: WASD to hop" : "FLYING: hold 4+6 to glide",
     `Bag G:${bird.inventory.grass} T:${bird.inventory.twig} W:${bird.inventory.web} B:${bird.inventory.insects}`,
@@ -231,15 +268,34 @@ function drawHud(ctx, bird, world) {
   ctx.restore();
 }
 
+function drawAltitudeGauge(ctx, bird) {
+  const x = ctx.canvas.width - 29, top = 55, trackHeight = 175;
+  ctx.save();
+  ctx.fillStyle = 'rgba(16,33,23,.82)';
+  ctx.fillRect(x - 24, top - 25, 48, trackHeight + 53);
+  ctx.fillStyle = '#D6E6CA';
+  ctx.font = '11px monospace';
+  ctx.fillText('40m', x - 15, top - 9);
+  ctx.fillStyle = '#526851';
+  ctx.fillRect(x - 5, top, 10, trackHeight);
+  const fraction = Math.min(1, Math.max(0, bird.altitude / 40));
+  const filled = fraction * trackHeight;
+  ctx.fillStyle = '#BFE2AA';
+  ctx.fillRect(x - 5, top + trackHeight - filled, 10, filled);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillText('0m', x - 8, top + trackHeight + 16);
+  ctx.restore();
+}
+
 export function renderScene(ctx, world, bird, camera) {
   const width = ctx.canvas.width, height = ctx.canvas.height;
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = "#324237"; ctx.fillRect(0, 0, width, height);
-  ctx.save(); ctx.translate(-camera.x, -camera.y);
+  ctx.save(); ctx.scale(camera.zoom, camera.zoom); ctx.translate(-camera.x, -camera.y);
   drawGround(ctx, world, camera);
   drawShrubs(ctx, world);
   drawResources(ctx, world, bird.altitude);
-  drawTrees(ctx, world, bird);
+  drawTrees(ctx, world, bird, camera);
   drawNest(ctx, world);
   // Mate is a small visible resident of the nesting tree, not full AI yet.
   if (Math.abs(bird.altitude - world.mate.altitude) < 7) {
@@ -253,7 +309,15 @@ export function renderScene(ctx, world, bird, camera) {
     Math.max(3, 17 - bird.altitude * 0.55),
     `rgba(22,43,31,${Math.max(0.03, 0.20 - bird.altitude * .008)})`);
   drawBird(ctx, bird, width / 2, height / 2);
+  if (bird.peckAnimation > 0 && bird.grounded) {
+    const pulse = (1 - bird.peckAnimation / 0.28);
+    ctx.save(); ctx.globalAlpha = Math.max(0, 0.65 - pulse * 0.5);
+    ctx.strokeStyle = '#E1C99A'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(width / 2, height / 2 + 2, 17 + pulse * 18, 0, TWO_PI);
+    ctx.stroke(); ctx.restore();
+  }
   drawOverheadFoliage(ctx, world, bird, camera);
   drawVignette(ctx, width, height, bird);
   drawHud(ctx, bird, world);
+  drawAltitudeGauge(ctx, bird);
 }
