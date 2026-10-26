@@ -1,6 +1,8 @@
 // Top-down painter. The bird stays centre-screen; ground and trees use world x/y.
 // Altitude affects occlusion and gliding, NOT the bird's screen-space y coordinate.
 import { getTreeSection, GROUND_TILE } from "./world.js";
+import { FLIGHT } from "./flightPhysics.js";
+import { findNearbyPerch } from "./collision.js";
 
 const TWO_PI = Math.PI * 2;
 function disk(ctx, x, y, r, fill) {
@@ -159,37 +161,56 @@ function drawTrees(ctx, world, bird, camera) {
 }
 function drawNest(ctx, world) {
   const nest = world.nest;
+  if (!nest.started) return; // Players choose the branch by delivering the first twig.
   const { x, y } = nest.point;
-  disk(ctx, x, y, 12, "rgba(16,37,25,.36)");
-  disk(ctx, x, y, 10, nest.built ? "#866A47" : "#B09564");
-  disk(ctx, x, y, 7, "#5C513F");
-  disk(ctx, x, y, 5, "#8D7955");
+  const materialCount = nest.progress.grass + nest.progress.twig + nest.progress.web;
+  const r = 5 + materialCount * 1.5;
+  disk(ctx, x + 3, y + 4, r + 2, "rgba(16,37,25,.36)");
+  disk(ctx, x, y, r, nest.built ? "#866A47" : "#B09564");
+  disk(ctx, x, y, Math.max(2, r - 3.5), "#5C513F");
   if (!nest.built) {
     ctx.fillStyle = "#FFF4BE";
     ctx.font = "11px monospace";
-    ctx.fillText("NEST", x - 12, y - 17);
+    ctx.fillText("NEST", x - 12, y - r - 8);
   }
 }
 function drawWing(ctx, side, state, bird) {
-  const isMiddleHeld = bird.glide;
-  const isActive = bird[`${side < 0 ? "left" : "right"}WingTimer`] > 0;
-  if (!isActive && !isMiddleHeld) {
-    polygon(ctx, [[side * 7, -7], [side * 17, -6], [side * 13, 19], [side * 8, 8]], "#1D2934");
+  const name = side < 0 ? 'left' : 'right';
+  const active = bird[`${name}WingTimer`] > 0;
+  const holding = bird[`${name}Held`];
+  if (!active && !holding && bird.grounded) {
+    polygon(ctx, [[side * 7, -7], [side * 17, -6], [side * 13, 19], [side * 8, 8]], '#1D2934');
     return;
   }
-  const positions = {
-    raised: [40, -48], middle: [68, -18], lowered: [47, 35], rest: [52, -12]
-  };
-  const [distance, ty] = positions[isMiddleHeld ? "middle" : state] || positions.rest;
-  const x = distance * side;
-  polygon(ctx, [[side * 10, -11], [x * .82, ty - 13], [x, ty],
-    [x * .86, ty + 11], [side * 10, 12]], "#242C37", "#17222C");
+  const pose = bird[`${name}WingPose`] ?? 0;
+  const pulse = Math.max(0, Math.min(1, bird[`${name}WingPulse`] || 0));
+  // Ease through a full visible wing arc instead of snapping to the key pose.
+  const sweep = Math.sin(pulse * Math.PI) * 19;
+  const reach = 68 - 18 * Math.abs(pose) + sweep * 0.32;
+  const tipY = -18 + pose * 47 - sweep;
+  const x = reach * side;
+  polygon(ctx, [[side * 10, -11], [x * 0.79, tipY - 14], [x, tipY],
+    [x * 0.89, tipY + 11], [side * 10, 12]], '#242C37', '#17222C');
+  // Feather-tip highlights only; white belly remains on the body, not the wings.
+  for (let i = 1; i <= 3; i++) {
+    const fraction = i / 4;
+    segment(ctx, x * (0.70 + fraction * 0.22), tipY + 3,
+      x * (0.74 + fraction * 0.21), tipY + 8 + i * 1.4, 1, '#515B60');
+  }
 }
 function drawBird(ctx, bird, x, y, isMate = false) {
   ctx.save();
   const heading = bird.heading || 0;
   const hopBob = bird.hopAnimation > 0 ? Math.sin((bird.hopAnimation / 0.16) * Math.PI) * 5 : 0;
   ctx.translate(x, y - hopBob); ctx.rotate(heading);
+  // 2.5D tilt: foreshorten and shift the entire body when diving or flaring.
+  // Bank is a consequence of unequal wing forces, not a direct arrow-key yaw.
+  if (!isMate) {
+    const pitch = bird.pitchVisual || 0;
+    ctx.transform(1, 0, (bird.bank || 0) * 0.36, 1, 0, 0);
+    ctx.translate(0, pitch * 5);
+    ctx.scale(1 + Math.max(0, -pitch) * 0.06, 1 - pitch * 0.19);
+  }
   ctx.scale(isMate ? 0.66 : 1, isMate ? 0.66 : 1);
   const wag = Math.sin(bird.tailPhase || bird.phase || 0) * 5;
   // Wagtail: triangular, slightly fanned wedge (black with pale feather edges).
@@ -204,7 +225,7 @@ function drawBird(ctx, bird, x, y, isMate = false) {
   // Dark upper back leaves the lower white belly exposed on this top-down sprite.
   ctx.fillStyle = '#24303A';
   ctx.beginPath(); ctx.ellipse(0, -5, 11.4, 15, 0, 0, TWO_PI); ctx.fill();
-  const pitchHead = (bird.pitch === "forward" ? -10 : bird.pitch === "backward" ? 9 : 0) -
+  const pitchHead = -(bird.pitchVisual ?? 0) * 12 -
     (bird.peckAnimation > 0 ? 7 : 0);
   const headY = -21 + pitchHead;
   disk(ctx, 0, headY, 12, "#202B35");
@@ -212,6 +233,17 @@ function drawBird(ctx, bird, x, y, isMate = false) {
   segment(ctx, -9, headY - 4, -4, headY - 8, 2.6, "#F0F0E7");
   segment(ctx, 9, headY - 4, 4, headY - 8, 2.6, "#F0F0E7");
   polygon(ctx, [[-3, headY - 9], [0, headY - 18], [3, headY - 9]], "#B8A67C");
+  // Carried nesting material follows the moving head and is visible in the beak.
+  if (bird.carrying === "twig") {
+    segment(ctx, -16, headY - 21, 16, headY - 27, 3.2, "#745037");
+    segment(ctx, 3, headY - 24, 8, headY - 33, 1.8, "#A98358");
+  } else if (bird.carrying === "grass") {
+    for (let i = -1; i <= 1; i++)
+      segment(ctx, i * 4 - 5, headY - 22, i * 5 + 3, headY - 34, 2, "#D6BD72");
+  } else if (bird.carrying === "web") {
+    segment(ctx, -10, headY - 26, 12, headY - 26, 1.5, "#EDE9DF");
+    segment(ctx, -2, headY - 34, 3, headY - 20, 1, "#EDE9DF");
+  }
   if (bird.grounded || bird.perchedOn) {
     segment(ctx, -5, 17, -7, 24, 1.5, "#B79F78");
     segment(ctx, 5, 17, 7, 24, 1.5, "#B79F78");
@@ -241,21 +273,27 @@ function drawVignette(ctx, width, height, bird) {
   gradient.addColorStop(1, "rgba(27,46,30,0.11)");
   ctx.fillStyle = gradient; ctx.fillRect(0, 0, width, height);
 }
-function drawHud(ctx, bird, world) {
+function drawHud(ctx, bird, world, controls) {
   const speed = Math.hypot(bird.velocityX, bird.velocityY);
   ctx.save();
-  ctx.fillStyle = "rgba(16,33,23,0.84)"; ctx.fillRect(8, 8, 344, 194);
+  ctx.fillStyle = "rgba(16,33,23,0.84)"; ctx.fillRect(8, 8, 354, 238);
   ctx.fillStyle = "#FFFFFF"; ctx.font = "13px monospace"; ctx.textBaseline = "top";
   const lines = [
     `ALT ${bird.altitude.toFixed(2)} m | VZ ${bird.velocityZ.toFixed(2)} m/s`,
     `Speed ${speed.toFixed(0)} px/s | Heading ${(bird.heading * 180 / Math.PI).toFixed(0)}°`,
-    `Pitch ${bird.pitch} | Glide ${bird.glide ? "ON" : "off"}`,
+    `Pitch ${bird.pitch} | Wings ${bird.flightMode} | Bank ${(bird.bank || 0).toFixed(2)}`,
     `Wing L ${bird.leftWing} / R ${bird.rightWing}`,
     `FLAPS ${bird.totalFlaps || 0}  | AIRSPEED ${(bird.airspeed || 0).toFixed(0)}`,
+    `Last key: ${controls?.lastInput || "none"} | Wing ${bird.lastWingEvent}`,
     `Position ${bird.x.toFixed(0)}, ${bird.y.toFixed(0)}`,
     bird.perchedOn ? `PERCHED ${bird.perchedOn.branchId}` : bird.grounded ? "GROUND: WASD to hop" : "FLYING: hold 4+6 to glide",
-    `Bag G:${bird.inventory.grass} T:${bird.inventory.twig} W:${bird.inventory.web} B:${bird.inventory.insects}`,
-    `Nest G:${world.nest.progress.grass}/3 T:${world.nest.progress.twig}/1 W:${world.nest.progress.web}/1`
+    `Beak: ${bird.carrying || "empty"} | Insects: ${bird.inventory.insects}`,
+    world.nest.started
+      ? `Nest G:${world.nest.progress.grass}/${world.nest.required.grass} T:${world.nest.progress.twig}/${world.nest.required.twig} W:${world.nest.progress.web}/${world.nest.required.web}`
+      : "Nest: take a twig to a suitable branch (N)",
+    bird.grounded ? "Space: peck | 7/9 flare 4/6 lift 1/3 thrust" :
+      bird.perchedOn ? "PERCHED N: build with material | any wing: takeoff" :
+        "SPACE: grab | 8: dive 2: flare 4+6: glide"
   ];
   lines.forEach((line, i) => ctx.fillText(line, 16, 14 + i * 20));
   if (bird.messageTime > 0) {
@@ -275,10 +313,10 @@ function drawAltitudeGauge(ctx, bird) {
   ctx.fillRect(x - 24, top - 25, 48, trackHeight + 53);
   ctx.fillStyle = '#D6E6CA';
   ctx.font = '11px monospace';
-  ctx.fillText('40m', x - 15, top - 9);
+  ctx.fillText(`${FLIGHT.maxAltitude}m`, x - 15, top - 9);
   ctx.fillStyle = '#526851';
   ctx.fillRect(x - 5, top, 10, trackHeight);
-  const fraction = Math.min(1, Math.max(0, bird.altitude / 40));
+  const fraction = Math.min(1, Math.max(0, bird.altitude / FLIGHT.maxAltitude));
   const filled = fraction * trackHeight;
   ctx.fillStyle = '#BFE2AA';
   ctx.fillRect(x - 5, top + trackHeight - filled, 10, filled);
@@ -287,7 +325,7 @@ function drawAltitudeGauge(ctx, bird) {
   ctx.restore();
 }
 
-export function renderScene(ctx, world, bird, camera) {
+export function renderScene(ctx, world, bird, camera, controls = null) {
   const width = ctx.canvas.width, height = ctx.canvas.height;
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = "#324237"; ctx.fillRect(0, 0, width, height);
@@ -297,10 +335,21 @@ export function renderScene(ctx, world, bird, camera) {
   drawResources(ctx, world, bird.altitude);
   drawTrees(ctx, world, bird, camera);
   drawNest(ctx, world);
+  // A subtle landing target appears when Space can actually grip a branch.
+  const nearbyPerch = findNearbyPerch(bird, world);
+  if (nearbyPerch) {
+    const { x, y } = nearbyPerch.point;
+    ctx.save();
+    ctx.strokeStyle = '#DDF3A6'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(x, y, 12, 0, TWO_PI); ctx.stroke();
+    ctx.fillStyle = '#FFF7C9'; ctx.font = '11px monospace';
+    ctx.fillText('SPACE', x + 15, y - 8);
+    ctx.restore();
+  }
   // Mate is a small visible resident of the nesting tree, not full AI yet.
   if (Math.abs(bird.altitude - world.mate.altitude) < 7) {
     drawBird(ctx, { ...world.mate, leftWing: "rest", rightWing: "rest",
-      leftWingTimer: 0, rightWingTimer: 0, glide: false, grounded: false,
+      leftWingTimer: 0, rightWingTimer: 0, glide: false,
       tailPhase: world.mate.phase }, world.mate.x, world.mate.y, true);
   }
   ctx.restore();
@@ -318,6 +367,6 @@ export function renderScene(ctx, world, bird, camera) {
   }
   drawOverheadFoliage(ctx, world, bird, camera);
   drawVignette(ctx, width, height, bird);
-  drawHud(ctx, bird, world);
+  drawHud(ctx, bird, world, controls);
   drawAltitudeGauge(ctx, bird);
 }
