@@ -1,77 +1,59 @@
+// Preserve discrete keydown events, including taps between physics frames.
+const wingNumbers = new Set([1, 3, 4, 6, 7, 9]);
+const pitchByNumber = { 2: "backward", 5: "neutral", 8: "forward" };
+const actionCodes = new Set(["Space", "KeyE", "KeyF"]);
+const groundCodes = new Set(["KeyW", "KeyA", "KeyS", "KeyD"]);
 
-const validKeys = new Set([
-  "Numpad1", "Numpad2", "Numpad3",
-  "Numpad4", "Numpad5", "Numpad6",
-  "Numpad7", "Numpad8", "Numpad9"
-]);
-
-const pitchKeys = {
-  Numpad2: "backward",
-  Numpad5: "neutral",
-  Numpad8: "forward"
-};
-
-// Current control state
 export const input = {
   pressed: new Set(),
-  pitch: "neutral"
+  pitch: "neutral",
+  wingEvents: [],
+  actions: []
 };
 
-// Check whether a key is currently held
-export function isKeyDown(number) {
-  return input.pressed.has(`Numpad${number}`);
+export function getNumber(code) {
+  const m = /^(?:Digit|Numpad)([1-9])$/.exec(code);
+  return m ? Number(m[1]) : null;
 }
 
-// Initialise keyboard input
 export function initInput() {
   const indicators = document.querySelectorAll("#keypad kbd");
-
-  function updateIndicators() {
-    indicators.forEach(indicator => {
-      const key = indicator.dataset.key;
-
-      indicator.classList.toggle(
-        "pressed",
-        input.pressed.has(key)
-      );
-
-      indicator.classList.toggle(
-        "selected",
-        pitchKeys[key] === input.pitch
-      );
+  const updateIndicators = () => {
+    indicators.forEach(el => {
+      const number = getNumber(el.dataset.key);
+      const isPressed = input.pressed.has(`Numpad${number}`);
+      el.classList.toggle("pressed", isPressed);
+      el.classList.toggle("selected", pitchByNumber[number] === input.pitch);
     });
-  }
+  };
 
-  // Key pressed
   window.addEventListener("keydown", event => {
-    if (!validKeys.has(event.code)) return;
-
+    const number = getNumber(event.code);
+    const code = number === null ? event.code : `Numpad${number}`;
+    if (number === null && !actionCodes.has(code) && !groundCodes.has(code)) return;
     event.preventDefault();
-    input.pressed.add(event.code);
-
-    // Body position stays selected until changed
-    if (pitchKeys[event.code]) {
-      input.pitch = pitchKeys[event.code];
-    }
-
+    // A new press is an event, a held key is a state. Both are needed.
+    if (event.repeat || input.pressed.has(code)) return;
+    input.pressed.add(code);
+    if (wingNumbers.has(number)) input.wingEvents.push(number);
+    if (pitchByNumber[number]) input.pitch = pitchByNumber[number];
+    if (actionCodes.has(code)) input.actions.push(code);
     updateIndicators();
   });
 
-  // Key released
   window.addEventListener("keyup", event => {
-    if (!validKeys.has(event.code)) return;
-
-    event.preventDefault();
-    input.pressed.delete(event.code);
-
+    const number = getNumber(event.code);
+    const code = number === null ? event.code : `Numpad${number}`;
+    if (input.pressed.has(code)) event.preventDefault();
+    input.pressed.delete(code);
     updateIndicators();
   });
 
-  // Clear held keys when the game loses focus
   window.addEventListener("blur", () => {
     input.pressed.clear();
+    input.wingEvents.length = 0;
+    input.actions.length = 0;
     updateIndicators();
   });
-
   updateIndicators();
 }
