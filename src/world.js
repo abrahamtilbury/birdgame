@@ -124,13 +124,14 @@ export function createWorld() {
     ],
     groundResources: createResources(trees), searchedPatches: new Set(),
     nest: {
+      started: false,
       treeId: nestTree.id, branchId: nestBranch.id,
       point: nestBranch.perchPoints[0],
       progress: { grass: 0, twig: 0, web: 0 },
       required: { grass: 3, twig: 1, web: 1 }, built: false
     },
-    mate: { x: nestBranch.perchPoints[1].x, y: nestBranch.perchPoints[1].y,
-      altitude: nestBranch.height, phase: 0, heading: 1.4 },
+    mate: { x: 355, y: 337, altitude: 0, phase: 0, heading: 1.4,
+      grounded: true, hopTimer: 0, hopAnimation: 0 },
     windAt(x, y, altitude) {
       if (altitude < 1) return { x: 0, y: 0, up: 0 };
       const t = this.time;
