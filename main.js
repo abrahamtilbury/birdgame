@@ -1,17 +1,26 @@
+
 import { input, initInput } from "./input.js";
-import { createCamera, updateCamera } from "./camera.js";
 import { startGame } from "./game.js";
-import { updateFlightPhysics } from "./flightPhysics.js";
 import { createWillieWagtail, updateBird } from "./bird.js";
+import { createWorld, getTreeSection } from "./world.js";
+import { updateFlightPhysics } from "./flightPhysics.js";
+import { createCamera, updateCamera } from "./camera.js";
 
 // Initialise Canvas
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
+
 const WIDTH = canvas.width;
 const HEIGHT = canvas.height;
-const bird = createWillieWagtail();
 
 ctx.imageSmoothingEnabled = false;
+
+// Initialise the world, bird and camera
+const world = createWorld();
+const bird = createWillieWagtail();
+const camera = createCamera(WIDTH, HEIGHT);
+
+updateCamera(camera, bird);
 
 // Draw a filled circle
 function drawCircle(x, y, radius, colour) {
@@ -23,8 +32,8 @@ function drawCircle(x, y, radius, colour) {
 
 // Draw the ground
 function drawGround() {
-  ctx.fillStyle = "#8DA789";
-  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  ctx.fillStyle = world.groundColour;
+  ctx.fillRect(0, 0, world.width, world.height);
 }
 
 // Draw a tree trunk viewed from above
@@ -35,14 +44,61 @@ function drawTree(x, y, radius) {
   drawCircle(x, y, radius * 0.35, "#70543B");
 }
 
-// Draw a shrub viewed from above
-function drawShrub(x, y) {
-  drawCircle(x, y, 14, "#426D43");
-  drawCircle(x - 5, y - 4, 9, "#60915A");
-  drawCircle(x + 6, y + 3, 8, "#527E4B");
+// Draw a shrub
+function drawShrub(x, y, radius = 14) {
+  drawCircle(x, y, radius, "#426D43");
+  drawCircle(x - 5, y - 4, radius * 0.65, "#60915A");
+  drawCircle(x + 6, y + 3, radius * 0.57, "#527E4B");
 }
 
-// Draw the bird viewed directly from above
+// Draw trees based on the bird's altitude
+function drawWorldTrees() {
+  for (const tree of world.trees) {
+    const section = getTreeSection(tree, bird.altitude);
+
+    // Canopy cross-section
+    if (section.canopyRadius > 0) {
+      drawCircle(
+        tree.x,
+        tree.y,
+        section.canopyRadius,
+        "#477D42"
+      );
+    }
+
+    // Trunk cross-section
+    if (section.trunkRadius > 0) {
+      drawTree(
+        tree.x,
+        tree.y,
+        section.trunkRadius
+      );
+    }
+
+    // Branches at the current altitude
+    for (const branch of section.branches) {
+      ctx.strokeStyle = "#70543B";
+      ctx.lineWidth = branch.width;
+      ctx.lineCap = "round";
+
+      ctx.beginPath();
+      ctx.moveTo(tree.x + branch.x1, tree.y + branch.y1);
+      ctx.lineTo(tree.x + branch.x2, tree.y + branch.y2);
+      ctx.stroke();
+    }
+  }
+}
+
+// Draw vegetation near ground level
+function drawWorldShrubs() {
+  if (bird.altitude >= 2) return;
+
+  for (const shrub of world.shrubs) {
+    drawShrub(shrub.x, shrub.y, shrub.radius);
+  }
+}
+
+// Draw the Willie Wagtail from above
 function drawBird(x, y, heading = 0) {
   ctx.save();
   ctx.translate(x, y);
@@ -102,60 +158,77 @@ function drawBird(x, y, heading = 0) {
   ctx.restore();
 }
 
-// Draw the complete scene
-function render() {
-  drawGround();
-
-  // Trees
-  drawTree(140, 140, 25);
-  drawTree(510, 190, 32);
-  drawTree(160, 490, 20);
-
-  // Shrubs
-  drawShrub(80, 310);
-  drawShrub(475, 450);
-  drawShrub(565, 550);
-
-  // Bird remains in centre
-  drawBird(WIDTH / 2, HEIGHT / 2, bird.heading);
-  
+// Draw diagnostic information
+function drawDebugInfo() {
   ctx.fillStyle = "#213721";
   ctx.font = "16px monospace";
-  
+
   ctx.fillText(`Pitch: ${bird.pitch}`, 16, 26);
+
   ctx.fillText(
-  `Wings: ${bird.leftWing} / ${bird.rightWing}`,
-  16, 46
-  
-);
+    `Wings: ${bird.leftWing} / ${bird.rightWing}`,
+    16, 46
+  );
 
+  ctx.fillText(
+    `Altitude: ${bird.altitude.toFixed(2)} m`,
+    16, 66
+  );
 
-ctx.fillText(
-  `Altitude: ${bird.altitude.toFixed(2)} m`,
-  16, 66
-);
+  ctx.fillText(
+    `Heading: ${(bird.heading * 180 / Math.PI).toFixed(0)}°`,
+    16, 86
+  );
 
-ctx.fillText(
-  `Heading: ${(bird.heading * 180 / Math.PI).toFixed(0)}°`,
-  16, 86
-);
-
-ctx.fillText(
-  `Position: ${bird.x.toFixed(0)}, ${bird.y.toFixed(0)}`,
-  16, 106
-);
-
-
+  ctx.fillText(
+    `Position: ${bird.x.toFixed(0)}, ${bird.y.toFixed(0)}`,
+    16, 106
+  );
 }
 
-// Start keyboard controls
-initInput();
+// Render the complete game
+function render() {
+  // Clear the entire viewport
+  ctx.fillStyle = "#324237";
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-// Draw first frame
+  // Apply camera offset to the world
+  ctx.save();
+  ctx.translate(-camera.x, -camera.y);
 
+  drawGround();
+  drawWorldShrubs();
+  drawWorldTrees();
+
+  // Restore screen coordinates
+  ctx.restore();
+
+  // Keep bird visually centred
+  drawBird(
+    WIDTH / 2,
+    HEIGHT / 2,
+    bird.heading
+  );
+
+  // Debug information stays fixed on screen
+  drawDebugInfo();
+}
+
+// Update the simulation
 function update(deltaTime) {
   updateBird(bird, input, deltaTime);
-  updateFlightPhysics(bird, deltaTime, world);
+
+  updateFlightPhysics(
+    bird,
+    deltaTime,
+    world
+  );
+
+  updateCamera(camera, bird);
 }
 
+// Initialise keyboard input
+initInput();
+
+// Start the game
 startGame(update, render);
