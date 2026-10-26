@@ -25,20 +25,33 @@ function perch(bird, tree, branch, point) {
   bird.grounded = false;
 }
 
-// F is optional landing assistance: no teleport unless close to a real branch.
-export function tryPerch(bird, world) {
-  if (bird.grounded || bird.perchedOn) return false;
+// Space (or F) gives a forgiving branch grab, but only near a real perch.
+// The vertical and horizontal ranges are deliberate gameplay tolerances.
+export const GRAB_HORIZONTAL_REACH = 56;
+export const GRAB_VERTICAL_REACH = 3.0;
+export function findNearbyPerch(bird, world, horizontal = GRAB_HORIZONTAL_REACH,
+    vertical = GRAB_VERTICAL_REACH) {
+  if (bird.grounded || bird.perchedOn) return null;
   let best = null;
   for (const tree of world.trees) for (const branch of tree.branches) {
-    if (!branch.perchable || Math.abs(bird.altitude - branch.height) > 1.2) continue;
+    if (!branch.perchable) continue;
+    const dz = Math.abs(bird.altitude - branch.height);
+    if (dz > vertical) continue;
     for (const point of branch.perchPoints) {
-      const d = Math.hypot(bird.x - point.x, bird.y - point.y);
-      if (d > 32) continue;
-      if (!best || d < best.d) best = { d, tree, branch, point };
+      const distance = Math.hypot(bird.x - point.x, bird.y - point.y);
+      if (distance > horizontal) continue;
+      const score = distance + dz * 13;
+      if (!best || score < best.score) {
+        best = { tree, branch, point, distance, dz, score };
+      }
     }
   }
-  if (!best) return false;
-  perch(bird, best.tree, best.branch, best.point);
+  return best;
+}
+export function tryPerch(bird, world) {
+  const candidate = findNearbyPerch(bird, world);
+  if (!candidate) return false;
+  perch(bird, candidate.tree, candidate.branch, candidate.point);
   return true;
 }
 
