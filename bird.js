@@ -72,13 +72,13 @@ export function updateBird(bird, controls, deltaTime) {
   // Independent left and right wing positions
   bird.leftWing = readWingPosition(
     controls.pressed,
-    LEFT_WING_KEYS
+    LEFT_WING_KEYS,
     bird.leftWing
   );
 
   bird.rightWing = readWingPosition(
     controls.pressed,
-    RIGHT_WING_KEYS
+    RIGHT_WING_KEYS,
     bird.rightWing
   );
 
