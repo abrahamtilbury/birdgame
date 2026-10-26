@@ -1,10 +1,10 @@
 import { input, initInput } from "./input.js";
 import { startGame } from "./game.js";
+import { createWillieWagtail, updateBird } from "./bird.js";
 
 // Initialise Canvas
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
-
 const WIDTH = canvas.width;
 const HEIGHT = canvas.height;
 
@@ -114,6 +114,16 @@ function render() {
 
   // Bird remains in centre
   drawBird(WIDTH / 2, HEIGHT / 2);
+  
+  ctx.fillStyle = "#213721";
+  ctx.font = "16px monospace";
+  
+  ctx.fillText(`Pitch: ${bird.pitch}`, 16, 26);
+  ctx.fillText(
+  `Wings: ${bird.leftWing} / ${bird.rightWing}`,
+  16, 46
+);
+
 }
 
 // Start keyboard controls
@@ -122,8 +132,7 @@ initInput();
 // Draw first frame
 
 function update(deltaTime) {
-  // Bird movement and flight physics will go here.
+  updateBird(bird, input, deltaTime);
 }
 
 startGame(update, render);
-
