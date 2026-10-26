@@ -1,204 +1,112 @@
+// 2.5D collision and branch perching. x/y: pixels; z: gameplay metres.
+const BODY_RADIUS = 11;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
- // Bird Flight: collision and perching for the current tree-based world.
- // World x/y and branch widths are in pixels; altitude is in gameplay metres.
-
-const BODY_RADIUS = 12;
-const PERCH_MARGIN = 4;
-const BRANCH_VERTICAL_TOLERANCE = 0.3;
-const TAKEOFF_SPEED = 0.15;
-const EPSILON = 0.01;
-
-function clamp(value, low, high) {
-  return Math.max(low, Math.min(high, value));
+function trunkRadiusAt(tree, z) {
+  if (z >= tree.trunk.height) return 0;
+  return tree.trunk.baseRadius + (tree.trunk.topRadius - tree.trunk.baseRadius) *
+    clamp(z / tree.trunk.height, 0, 1);
 }
 
-function trunkRadiusAt(tree, altitude) {
-  const { baseRadius, topRadius, height } = tree.trunk;
-  if (altitude > height) return 0;
-  const portion = clamp(altitude / height, 0, 1);
-  return baseRadius + (topRadius - baseRadius) * portion;
+function closestPoint(tree, branch, x, y) {
+  const ax = tree.x + branch.x1, ay = tree.y + branch.y1;
+  const dx = branch.x2 - branch.x1, dy = branch.y2 - branch.y1;
+  const len = dx * dx + dy * dy;
+  const t = len > 0 ? clamp(((x - ax) * dx + (y - ay) * dy) / len, 0, 1) : 0;
+  const px = ax + dx * t, py = ay + dy * t;
+  return { x: px, y: py, distance: Math.hypot(x - px, y - py) };
 }
 
-function nearestPointOnBranch(tree, branch, x, y) {
-  const x1 = tree.x + branch.x1;
-  const y1 = tree.y + branch.y1;
-  const dx = branch.x2 - branch.x1;
-  const dy = branch.y2 - branch.y1;
-  const lengthSquared = dx * dx + dy * dy;
-  const fraction = lengthSquared > 0
-    ? clamp(((x - x1) * dx + (y - y1) * dy) / lengthSquared, 0, 1)
-    : 0;
-
-  return {
-    x: x1 + fraction * dx,
-    y: y1 + fraction * dy,
-    distance: Math.hypot(x - (x1 + fraction * dx), y - (y1 + fraction * dy)),
-    fraction
-  };
-}
-
-function stopInwardVelocity(bird, nx, ny) {
-  const inwardSpeed = bird.velocityX * nx + bird.velocityY * ny;
-  if (inwardSpeed < 0) {
-    bird.velocityX -= inwardSpeed * nx;
-    bird.velocityY -= inwardSpeed * ny;
-  }
-}
-
-// Find a solid trunk hit along the travelled horizontal segment.
-// This prevents a fast bird from passing straight through a trunk.
-function findSweptTrunkHit(bird, world, previous) {
-  const dx = bird.x - previous.x;
-  const dy = bird.y - previous.y;
-  const a = dx * dx + dy * dy;
-  if (a === 0) return null;
-
-  let firstHit = null;
-  for (const tree of world.trees) {
-    const trunkRadius = trunkRadiusAt(tree, bird.altitude);
-    if (trunkRadius === 0) continue;
-
-    const radius = trunkRadius + BODY_RADIUS;
-    const fx = previous.x - tree.x;
-    const fy = previous.y - tree.y;
-    const c = fx * fx + fy * fy - radius * radius;
-    if (c <= 0) continue; // Already inside: handled by overlap resolution.
-
-    const b = 2 * (fx * dx + fy * dy);
-    const discriminant = b * b - 4 * a * c;
-    if (discriminant < 0) continue;
-
-    const t = (-b - Math.sqrt(discriminant)) / (2 * a);
-    if (t < 0 || t > 1) continue;
-    if (!firstHit || t < firstHit.t) firstHit = { tree, t, radius };
-  }
-  return firstHit;
-}
-
-function resolveTrunkCollisions(bird, world, previous) {
-  const hit = findSweptTrunkHit(bird, world, previous);
-  if (hit) {
-    const travelX = bird.x - previous.x;
-    const travelY = bird.y - previous.y;
-    const impactX = previous.x + travelX * hit.t;
-    const impactY = previous.y + travelY * hit.t;
-    const angle = Math.atan2(impactY - hit.tree.y, impactX - hit.tree.x);
-    const nx = Math.cos(angle);
-    const ny = Math.sin(angle);
-    bird.x = hit.tree.x + nx * (hit.radius + EPSILON);
-    bird.y = hit.tree.y + ny * (hit.radius + EPSILON);
-    stopInwardVelocity(bird, nx, ny);
-  }
-
-  // Resolve overlaps (including spawning inside a trunk).
-  for (const tree of world.trees) {
-    const trunkRadius = trunkRadiusAt(tree, bird.altitude);
-    if (trunkRadius === 0) continue;
-
-    const minDistance = trunkRadius + BODY_RADIUS;
-    const dx = bird.x - tree.x;
-    const dy = bird.y - tree.y;
-    const distance = Math.hypot(dx, dy);
-    if (distance >= minDistance) continue;
-
-    const nx = distance > 0 ? dx / distance : 1;
-    const ny = distance > 0 ? dy / distance : 0;
-    bird.x = tree.x + nx * (minDistance + EPSILON);
-    bird.y = tree.y + ny * (minDistance + EPSILON);
-    stopInwardVelocity(bird, nx, ny);
-  }
-}
-
-// Land only while crossing a branch's altitude from above.
-function findLanding(bird, world, previous) {
-  if (bird.velocityZ > 0 || previous.altitude <= bird.altitude) return null;
-
-  let bestLanding = null;
-  for (const tree of world.trees) {
-    for (const branch of tree.branches) {
-      if (!branch.perchable) continue;
-      if (previous.altitude < branch.height || bird.altitude > branch.height) continue;
-
-      const fraction = (previous.altitude - branch.height) /
-        (previous.altitude - bird.altitude);
-      const contactX = previous.x + (bird.x - previous.x) * fraction;
-      const contactY = previous.y + (bird.y - previous.y) * fraction;
-      const point = nearestPointOnBranch(tree, branch, contactX, contactY);
-
-      if (point.distance > branch.width / 2 + PERCH_MARGIN) continue;
-
-      // The inner portion of the branch is occupied by the trunk.
-      const distanceFromTrunk = Math.hypot(point.x - tree.x, point.y - tree.y);
-      if (distanceFromTrunk < trunkRadiusAt(tree, branch.height) + BODY_RADIUS) continue;
-
-      if (!bestLanding || branch.height > bestLanding.height) {
-        bestLanding = {
-          treeId: tree.id,
-          branchId: branch.id,
-          x: point.x,
-          y: point.y,
-          height: branch.height
-        };
-      }
-    }
-  }
-  return bestLanding;
-}
-
-// Solid branches can obstruct lateral flight at the same altitude.
-function resolveBranchCollisions(bird, world) {
-  if (bird.velocityZ > TAKEOFF_SPEED) return; // Ascending birds can pass over branches.
-
-  for (const tree of world.trees) {
-    for (const branch of tree.branches) {
-      if (Math.abs(bird.altitude - branch.height) > BRANCH_VERTICAL_TOLERANCE) {
-        continue;
-      }
-
-      const point = nearestPointOnBranch(tree, branch, bird.x, bird.y);
-      const minDistance = BODY_RADIUS + branch.width / 2;
-      if (point.distance >= minDistance) continue;
-
-      const dx = bird.x - point.x;
-      const dy = bird.y - point.y;
-      const nx = point.distance > 0 ? dx / point.distance : 1;
-      const ny = point.distance > 0 ? dy / point.distance : 0;
-      bird.x = point.x + nx * (minDistance + EPSILON);
-      bird.y = point.y + ny * (minDistance + EPSILON);
-      stopInwardVelocity(bird, nx, ny);
-    }
-  }
-}
-
-function setPerched(bird, perch) {
-  bird.perchedOn = perch;
-  bird.x = perch.x;
-  bird.y = perch.y;
-  bird.altitude = perch.height;
-  bird.velocityX = 0;
-  bird.velocityY = 0;
-  bird.velocityZ = 0;
+function perch(bird, tree, branch, point) {
+  bird.perchedOn = { treeId: tree.id, branchId: branch.id, perchId: point.id,
+    x: point.x, y: point.y, height: branch.height };
+  bird.x = point.x; bird.y = point.y; bird.altitude = branch.height;
+  bird.velocityX = bird.velocityY = bird.velocityZ = 0;
   bird.grounded = false;
 }
 
-// Call once per fixed physics step, AFTER updateFlightPhysics().
-// previous is { x, y, altitude } captured BEFORE that physics step.
+// F is optional landing assistance: no teleport unless close to a real branch.
+export function tryPerch(bird, world) {
+  if (bird.grounded || bird.perchedOn) return false;
+  let best = null;
+  for (const tree of world.trees) for (const branch of tree.branches) {
+    if (!branch.perchable || Math.abs(bird.altitude - branch.height) > 1.2) continue;
+    for (const point of branch.perchPoints) {
+      const d = Math.hypot(bird.x - point.x, bird.y - point.y);
+      if (d > 32) continue;
+      if (!best || d < best.d) best = { d, tree, branch, point };
+    }
+  }
+  if (!best) return false;
+  perch(bird, best.tree, best.branch, best.point);
+  return true;
+}
+
+function resolveTrunks(bird, world, previous) {
+  for (const tree of world.trees) {
+    const radius = trunkRadiusAt(tree, bird.altitude) + BODY_RADIUS;
+    if (radius <= BODY_RADIUS) continue;
+    // Closest point on movement segment: catches high-speed tunnelling.
+    const dx = bird.x - previous.x, dy = bird.y - previous.y;
+    const lengthSquared = dx * dx + dy * dy;
+    const t = lengthSquared > 0 ? clamp(
+      ((tree.x - previous.x) * dx + (tree.y - previous.y) * dy) / lengthSquared, 0, 1
+    ) : 1;
+    const closestX = previous.x + t * dx, closestY = previous.y + t * dy;
+    if (Math.hypot(closestX - tree.x, closestY - tree.y) >= radius) continue;
+    const d = Math.hypot(bird.x - tree.x, bird.y - tree.y);
+    // If the movement crossed through the trunk, return to the entry side.
+    const previousDistance = Math.hypot(previous.x - tree.x, previous.y - tree.y);
+    const referenceX = previousDistance >= radius ? closestX : bird.x;
+    const referenceY = previousDistance >= radius ? closestY : bird.y;
+    const refDistance = Math.hypot(referenceX - tree.x, referenceY - tree.y);
+    const nx = refDistance > 0.0001 ? (referenceX - tree.x) / refDistance : 1;
+    const ny = refDistance > 0.0001 ? (referenceY - tree.y) / refDistance : 0;
+    if (d < radius || previousDistance >= radius) {
+      bird.x = tree.x + nx * (radius + 0.1);
+      bird.y = tree.y + ny * (radius + 0.1);
+      const inward = bird.velocityX * nx + bird.velocityY * ny;
+      if (inward < 0) {
+        bird.velocityX -= inward * nx;
+        bird.velocityY -= inward * ny;
+      }
+    }
+  }
+}
+
+function landingBranch(bird, world, previous) {
+  if (bird.velocityZ >= 0 || previous.altitude <= bird.altitude) return false;
+  const zStart = previous.altitude, zEnd = bird.altitude;
+  for (const tree of world.trees) for (const branch of tree.branches) {
+    if (!branch.perchable || zStart < branch.height || zEnd > branch.height) continue;
+    const timeFraction = (zStart - branch.height) / (zStart - zEnd);
+    const x = previous.x + (bird.x - previous.x) * timeFraction;
+    const y = previous.y + (bird.y - previous.y) * timeFraction;
+    const closest = closestPoint(tree, branch, x, y);
+    if (closest.distance > 12 + branch.width / 2) continue;
+    const point = branch.perchPoints.reduce((best, p) =>
+      Math.hypot(p.x - x, p.y - y) < Math.hypot(best.x - x, best.y - y) ? p : best,
+      branch.perchPoints[0]);
+    if (Math.hypot(point.x - x, point.y - y) > 28) continue;
+    perch(bird, tree, branch, point);
+    return true;
+  }
+  return false;
+}
+
 export function resolveCollisions(bird, world, previous) {
   if (bird.perchedOn) {
-    if (bird.velocityZ > TAKEOFF_SPEED) {
-      bird.perchedOn = null; // A completed wing stroke launches from the perch.
-    } else {
-      setPerched(bird, bird.perchedOn);
+    if (bird.velocityZ > 0.2) bird.perchedOn = null;
+    else {
+      bird.x = bird.perchedOn.x;
+      bird.y = bird.perchedOn.y;
+      bird.altitude = bird.perchedOn.height;
+      bird.velocityX = bird.velocityY = bird.velocityZ = 0;
+      bird.grounded = false;
       return;
     }
   }
-
-  const landing = findLanding(bird, world, previous);
-  if (landing) {
-    setPerched(bird, landing);
-    return;
-  }
-
-  resolveTrunkCollisions(bird, world, previous);
-  resolveBranchCollisions(bird, world);
+  if (landingBranch(bird, world, previous)) return;
+  resolveTrunks(bird, world, previous);
+  // The prototype leaves narrow branch-side collision to the landing system.
 }
