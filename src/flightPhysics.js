@@ -1,72 +1,81 @@
-// Playable three-axis flight prototype: x/y in pixels, z in gameplay metres.
-// Not a real aerodynamics simulation. Wind and aerodynamic forces can be refined later.
+// Playable 2.5D flight: x/y are world pixels, altitude is gameplay metres.
+// Intentionally tuned for clear control feedback; this is not a CFD model.
 export const FLIGHT = Object.freeze({
-  gravity: 6.4,
-  impulsePerWing: 3.9,
-  thrustPerWing: 16,
-  turnPerWing: 0.19,
-  maxRise: 9.5,
+  gravity: 4.5,
+  impulsePerWing: 5.4,
+  thrustPerWing: 17,
+  turnPerWing: 0.16,
+  maxRise: 14,
   maxFall: 9,
-  maxSpeed: 150,
-  horizontalDrag: 0.48,
-  verticalDrag: 0.30,
-  forwardAccel: 19,
-  glidingLift: 5.4,
-  stallSpeed: 24
+  maxSpeed: 165,
+  horizontalDrag: 0.38,
+  verticalDrag: 0.15,
+  forwardAccel: 23,
+  glidingLift: 8,
+  stallSpeed: 12
 });
 const clamp = (n, low, high) => Math.max(low, Math.min(high, n));
 
 export function updateFlightPhysics(bird, dt, world) {
   const left = bird.leftFlapCount;
   const right = bird.rightFlapCount;
-  bird.leftFlapCount = 0;
-  bird.rightFlapCount = 0;
+  bird.leftFlapCount = bird.rightFlapCount = 0;
   const total = left + right;
-  const airborne = !bird.grounded || bird.altitude > 0 || total > 0 || bird.perchedOn;
-  if (!airborne) {
-    bird.velocityX = bird.velocityY = bird.velocityZ = 0;
+  if (total) {
+    bird.totalFlaps = (bird.totalFlaps || 0) + total;
+    bird.flapFeedbackTimer = 0.7;
+  }
+
+  // Ground movement belongs to bird.js. The first completed stroke must lift off.
+  if (bird.grounded && !total && !bird.perchedOn) {
     bird.altitude = 0;
+    bird.velocityX = bird.velocityY = bird.velocityZ = 0;
     bird.x = clamp(bird.x, 12, world.width - 12);
     bird.y = clamp(bird.y, 12, world.height - 12);
     return;
   }
 
   if (total) {
-    const lift = bird.pitch === "backward" ? 1.15 : bird.pitch === "forward" ? 0.82 : 1;
-    const thrust = bird.pitch === "forward" ? 1.25 : bird.pitch === "backward" ? 0.55 : 1;
-    bird.velocityZ += total * FLIGHT.impulsePerWing * lift;
+    const liftMultiplier = bird.pitch === 'backward' ? 1.12 :
+      bird.pitch === 'forward' ? 0.83 : 1;
+    const thrustMultiplier = bird.pitch === 'forward' ? 1.26 :
+      bird.pitch === 'backward' ? 0.62 : 1;
+    bird.velocityZ += total * FLIGHT.impulsePerWing * liftMultiplier;
     bird.heading += (left - right) * FLIGHT.turnPerWing;
     bird.roll += (left - right) * 0.18;
-    bird.velocityX += Math.sin(bird.heading) * FLIGHT.thrustPerWing * total * thrust;
-    bird.velocityY -= Math.cos(bird.heading) * FLIGHT.thrustPerWing * total * thrust;
+    bird.velocityX += Math.sin(bird.heading) * FLIGHT.thrustPerWing * total * thrustMultiplier;
+    bird.velocityY -= Math.cos(bird.heading) * FLIGHT.thrustPerWing * total * thrustMultiplier;
+    bird.grounded = false;
   }
 
-  const speed = Math.hypot(bird.velocityX, bird.velocityY);
-  const damping = FLIGHT.horizontalDrag + (bird.pitch === "backward" ? 0.7 : 0);
-  const wind = world.windAt ? world.windAt(bird.x, bird.y, bird.altitude) : { x: 0, y: 0, up: 0 };
-  bird.velocityX += wind.x * dt;
-  bird.velocityY += wind.y * dt;
-
-  if (bird.pitch === "forward") {
+  const wind = world.windAt ? world.windAt(bird.x, bird.y, bird.altitude) :
+    { x: 0, y: 0, up: 0 };
+  const drag = FLIGHT.horizontalDrag + (bird.pitch === 'backward' ? 0.62 : 0);
+  if (bird.pitch === 'forward') {
     bird.velocityX += Math.sin(bird.heading) * FLIGHT.forwardAccel * dt;
     bird.velocityY -= Math.cos(bird.heading) * FLIGHT.forwardAccel * dt;
   }
-  const dragFactor = Math.exp(-damping * dt);
-  bird.velocityX *= dragFactor;
-  bird.velocityY *= dragFactor;
+  // Wind is treated as a moving air mass; it only gently advects a bird.
+  bird.velocityX += (wind.x - bird.velocityX) * 0.026 * dt;
+  bird.velocityY += (wind.y - bird.velocityY) * 0.026 * dt;
+  bird.velocityX *= Math.exp(-drag * dt);
+  bird.velocityY *= Math.exp(-drag * dt);
 
-  const horizontalSpeed = Math.hypot(bird.velocityX, bird.velocityY);
-  if (horizontalSpeed > FLIGHT.maxSpeed) {
-    bird.velocityX *= FLIGHT.maxSpeed / horizontalSpeed;
-    bird.velocityY *= FLIGHT.maxSpeed / horizontalSpeed;
+  const speed = Math.hypot(bird.velocityX, bird.velocityY);
+  if (speed > FLIGHT.maxSpeed) {
+    const ratio = FLIGHT.maxSpeed / speed;
+    bird.velocityX *= ratio;
+    bird.velocityY *= ratio;
   }
-
-  // Gliding requires airspeed and wings spread. Holding 4+6 activates it.
-  const airflow = Math.hypot(bird.velocityX - wind.x, bird.velocityY - wind.y);
-  const liftFraction = clamp((airflow - FLIGHT.stallSpeed) / 85, 0, 1);
-  const glideLift = bird.glide ? FLIGHT.glidingLift * liftFraction : 0;
-  const pitchPenalty = bird.pitch === "forward" ? 1.2 : 0;
-  bird.velocityZ += (glideLift + wind.up - FLIGHT.gravity - pitchPenalty) * dt;
+  const airspeed = Math.hypot(bird.velocityX - wind.x, bird.velocityY - wind.y);
+  bird.airspeed = airspeed;
+  // Spreading the wings slows descent at sufficient airspeed; still air cannot
+  // produce free altitude gain. Rising air can provide additional lift.
+  const glideFraction = clamp((airspeed - FLIGHT.stallSpeed) / 45, 0, 1);
+  const glideLift = bird.glide ? Math.min(FLIGHT.gravity * 0.92,
+    FLIGHT.glidingLift * glideFraction) : 0;
+  const forwardDive = bird.pitch === 'forward' ? 0.8 : 0;
+  bird.velocityZ += (glideLift + wind.up - FLIGHT.gravity - forwardDive) * dt;
   bird.velocityZ *= Math.exp(-FLIGHT.verticalDrag * dt);
   bird.velocityZ = clamp(bird.velocityZ, -FLIGHT.maxFall, FLIGHT.maxRise);
 
@@ -77,15 +86,16 @@ export function updateFlightPhysics(bird, dt, world) {
   if (bird.altitude <= 0) {
     bird.altitude = 0;
     bird.velocityZ = 0;
-    bird.velocityX = 0;
-    bird.velocityY = 0;
+    bird.velocityX = bird.velocityY = 0;
     bird.grounded = true;
-  } else bird.grounded = false;
-
-  const newX = clamp(bird.x, 12, world.width - 12);
-  const newY = clamp(bird.y, 12, world.height - 12);
-  if (newX !== bird.x) bird.velocityX = 0;
-  if (newY !== bird.y) bird.velocityY = 0;
-  bird.x = newX; bird.y = newY;
+  } else {
+    bird.grounded = false;
+  }
+  const nx = clamp(bird.x, 12, world.width - 12);
+  const ny = clamp(bird.y, 12, world.height - 12);
+  if (nx !== bird.x) bird.velocityX = 0;
+  if (ny !== bird.y) bird.velocityY = 0;
+  bird.x = nx;
+  bird.y = ny;
   bird.roll *= Math.exp(-3.5 * dt);
 }
