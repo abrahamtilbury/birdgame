@@ -68,3 +68,7 @@ body {
 
 #game { width: min(640px, 94vw, calc(100dvh - 180px)); }
 #keypad kbd.pressed { background: #C49A43; color: #111; }
+
+/* The displayed numpad is a playable touch/mouse alternative. */
+#keypad kbd { cursor: pointer; touch-action: none; }
+#keypad kbd:focus-visible { outline: 3px solid #fff3bd; outline-offset: 2px; }
