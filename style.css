@@ -58,3 +58,13 @@ body {
 #keypad kbd.pitch.selected {
   border: 2px solid #8ED69B;
 }
+.controls {
+  color: #16251a;
+  font: 13px/1.45 system-ui, sans-serif;
+  text-align: center;
+  margin: -5px 8px 8px;
+  max-width: 620px;
+}
+
+#game { width: min(640px, 94vw, calc(100dvh - 180px)); }
+#keypad kbd.pressed { background: #C49A43; color: #111; }
