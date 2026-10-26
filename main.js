@@ -1,5 +1,5 @@
-
-import { initInput } from "./input.js";
+import { input, initInput } from "./input.js";
+import { startGame } from "./game.js";
 
 // Initialise Canvas
 const canvas = document.getElementById("gameCanvas");
@@ -120,4 +120,10 @@ function render() {
 initInput();
 
 // Draw first frame
-render();
+
+function update(deltaTime) {
+  // Bird movement and flight physics will go here.
+}
+
+startGame(update, render);
+
