@@ -1,5 +1,6 @@
 // Ground foraging and simple resource -> nest construction loop.
 import { setBirdMessage } from "./bird.js";
+import { GROUND_TILE } from "./world.js";
 
 function deterministicRoll(x, y) {
   const v = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
@@ -7,6 +8,7 @@ function deterministicRoll(x, y) {
 }
 
 export function searchGround(bird, world) {
+  bird.peckAnimation = 0.28;
   if (!bird.grounded) {
     setBirdMessage(bird, "Land before searching the grass");
     return;
@@ -19,7 +21,7 @@ export function searchGround(bird, world) {
     setBirdMessage(bird, `Collected ${nearby.type} (${bird.inventory[nearby.type]})`);
     return;
   }
-  const ix = Math.floor(bird.x / 28), iy = Math.floor(bird.y / 28);
+  const ix = Math.floor(bird.x / GROUND_TILE), iy = Math.floor(bird.y / GROUND_TILE);
   const key = `${ix},${iy}`;
   if (world.searchedPatches.has(key)) {
     setBirdMessage(bird, "This patch has already been searched");
