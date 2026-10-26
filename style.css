@@ -44,8 +44,17 @@ body {
   user-select: none;
 }
 
-
 #keypad kbd.pitch {
   background: #304735;
   border-color: #63876A;
+}
+
+#keypad kbd.pressed {
+  background: #C49A43;
+  color: #111;
+  border-color: #F0C66B;
+}
+
+#keypad kbd.pitch.selected {
+  border: 2px solid #8ED69B;
 }
