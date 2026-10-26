@@ -1,32 +1,31 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-
-  <title>Bird Flight</title>
+  <meta name="theme-color" content="#8DA789">
+  <title>Bird Flight — Willie Wagtail</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23324737'/%3E%3Cpath d='M32 10L46 34L32 28L18 34Z' fill='%23fff'/%3E%3Cpath d='M28 25L32 55L36 25Z' fill='%23222'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="./style.css">
 </head>
-
 <body>
   <main id="game">
-    <canvas id="gameCanvas" width="640" height="640" aria-label="Bird flight game">
+    <canvas id="gameCanvas" width="640" height="640" aria-label="Bird Flight top-down game">
       Your browser does not support HTML5 Canvas.
     </canvas>
-    <div id="keypad">
-      <kbd data-key="Numpad1">1</kbd>
-      <kbd data-key="Numpad2" class="pitch">2</kbd>
-      <kbd data-key="Numpad3">3</kbd>
-      <kbd data-key="Numpad4">4</kbd>
-      <kbd data-key="Numpad5" class="pitch">5</kbd>
-      <kbd data-key="Numpad6">6</kbd>
+    <div id="keypad" aria-label="Flight controls: 7 8 9, 4 5 6, 1 2 3">
       <kbd data-key="Numpad7">7</kbd>
       <kbd data-key="Numpad8" class="pitch">8</kbd>
       <kbd data-key="Numpad9">9</kbd>
+      <kbd data-key="Numpad4">4</kbd>
+      <kbd data-key="Numpad5" class="pitch">5</kbd>
+      <kbd data-key="Numpad6">6</kbd>
+      <kbd data-key="Numpad1">1</kbd>
+      <kbd data-key="Numpad2" class="pitch">2</kbd>
+      <kbd data-key="Numpad3">3</kbd>
     </div>
+    <p class="controls">W A S D: hop · Space: peck / collect · F: perch · E: nest · 7+9 → 4+6 → 1+3: flap · Hold 4+6: glide</p>
   </main>
-
   <script type="module" src="./src/main.js"></script>
 </body>
 </html>
