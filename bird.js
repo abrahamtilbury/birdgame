@@ -34,6 +34,12 @@ export function createWillieWagtail() {
     // Independent wing positions
     leftWing: "rest",
     rightWing: "rest",
+    
+    leftPreviousWing: "rest",
+    rightPreviousWing: "rest",
+    
+    leftStrokePhase: 0,
+    rightStrokePhase: 0,
 
     // Ground and branch interaction
     grounded: true,
@@ -45,8 +51,9 @@ export function createWillieWagtail() {
 }
 
 // Read the most recently pressed wing-position key
-function readWingPosition(pressedKeys, mapping) {
-  let position = "rest";
+function readWingPosition(pressedKeys, mapping, currentPosition) {
+  let position = currentPosition;
+
 
   for (const key of pressedKeys) {
     if (Object.hasOwn(mapping, key)) {
@@ -66,11 +73,13 @@ export function updateBird(bird, controls, deltaTime) {
   bird.leftWing = readWingPosition(
     controls.pressed,
     LEFT_WING_KEYS
+    bird.leftWing
   );
 
   bird.rightWing = readWingPosition(
     controls.pressed,
     RIGHT_WING_KEYS
+    bird.rightWing
   );
 
   // Gentle wagtail tail movement
