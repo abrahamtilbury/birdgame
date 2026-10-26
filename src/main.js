@@ -7,6 +7,7 @@ import { createCamera, updateCamera } from "./camera.js";
 import { resolveCollisions, tryPerch } from "./collision.js";
 import { renderScene } from "./renderer.js";
 import { searchGround, useNest } from "./foraging.js";
+import { updateMate } from "./mateAI.js";
 
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
@@ -15,26 +16,65 @@ const world = createWorld();
 const bird = createWillieWagtail();
 const camera = createCamera(canvas.width, canvas.height);
 updateCamera(camera, bird);
+// Read-only browser Console snapshot for diagnosing real keyboard behaviour.
+window.birdFlightDebug = () => ({
+  altitude: Number(bird.altitude.toFixed(3)),
+  verticalSpeed: Number(bird.velocityZ.toFixed(3)),
+  flaps: bird.totalFlaps,
+  lastKey: input.lastInput,
+  lastWingEvent: bird.lastWingEvent,
+  grounded: bird.grounded,
+  carrying: bird.carrying,
+  pitch: bird.pitch,
+  pitchVisual: Number(bird.pitchVisual.toFixed(3)),
+  bank: Number(bird.bank.toFixed(3)),
+  flightMode: bird.flightMode,
+  nestStarted: world.nest.started,
+  nestBuilt: world.nest.built,
+  mate: { x: Number(world.mate.x.toFixed(1)), y: Number(world.mate.y.toFixed(1)),
+    altitude: Number(world.mate.altitude.toFixed(2)) }
+});
 
 function update(dt) {
   const previous = { x: bird.x, y: bird.y, altitude: bird.altitude };
   world.time += dt;
   updateBird(bird, input, dt);
+  const actions = input.actions.splice(0);
+  // Temporary diagnostic: T is a full two-wing downstroke through real physics.
+  // If T lifts the bird but numpad does not, the problem is wing input, not lift.
+  if (actions.includes("KeyT")) {
+    bird.leftFlapCount += 1;
+    bird.rightFlapCount += 1;
+    setBirdMessage(bird, "TEST FLAP: two wings fired", 1.5);
+  }
   updateFlightPhysics(bird, dt, world);
   resolveCollisions(bird, world, previous);
 
-  for (const action of input.actions.splice(0)) {
-    if (action === "Space") searchGround(bird, world);
-    if (action === "KeyE") useNest(bird, world);
+  for (const action of actions) {
+    if (action === "Space") {
+      if (bird.grounded) searchGround(bird, world);
+      else if (bird.perchedOn) setBirdMessage(bird,
+        "Gripping branch — press N to build with material in your beak");
+      else if (tryPerch(bird, world)) setBirdMessage(bird,
+        bird.carrying ? "Perched! Press N to use material in beak" :
+          "Perched! Bring a twig and press N to begin a nest");
+      else setBirdMessage(bird,
+        "Fly near a branch at its height, then tap Space to grip (56px / 3m)");
+    }
+    if (action === "KeyN" || action === "KeyE") {
+      // N may grab a nearby branch first when carrying a nesting item.
+      if (!bird.grounded && !bird.perchedOn && bird.carrying) tryPerch(bird, world);
+      useNest(bird, world);
+    }
     if (action === "KeyF" && !tryPerch(bird, world))
-      setBirdMessage(bird, "Get closer to a branch, at its height, to perch");
+      setBirdMessage(bird, "Fly closer to a branch, then Space or F to grip");
   }
-  world.mate.phase += dt * 6;
+  updateMate(world, dt);
   updateCamera(camera, bird);
 }
 
 function render() {
-  renderScene(ctx, world, bird, camera);
+  renderScene(ctx, world, bird, camera, input);
 }
 
 initInput();
