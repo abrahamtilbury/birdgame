@@ -1,5 +1,6 @@
 import { input, initInput } from "./input.js";
 import { startGame } from "./game.js";
+import { updateFlightPhysics } from "./flightPhysics.js";
 import { createWillieWagtail, updateBird } from "./bird.js";
 
 // Initialise Canvas
@@ -41,9 +42,10 @@ function drawShrub(x, y) {
 }
 
 // Draw the bird viewed directly from above
-function drawBird(x, y) {
+function drawBird(x, y, heading = 0) {
   ctx.save();
   ctx.translate(x, y);
+  ctx.rotate(heading);
 
   // Tail
   ctx.fillStyle = "#252D35";
@@ -114,7 +116,7 @@ function render() {
   drawShrub(565, 550);
 
   // Bird remains in centre
-  drawBird(WIDTH / 2, HEIGHT / 2);
+  drawBird(WIDTH / 2, HEIGHT / 2, bird.heading);
   
   ctx.fillStyle = "#213721";
   ctx.font = "16px monospace";
@@ -123,7 +125,25 @@ function render() {
   ctx.fillText(
   `Wings: ${bird.leftWing} / ${bird.rightWing}`,
   16, 46
+  
 );
+
+
+ctx.fillText(
+  `Altitude: ${bird.altitude.toFixed(2)} m`,
+  16, 66
+);
+
+ctx.fillText(
+  `Heading: ${(bird.heading * 180 / Math.PI).toFixed(0)}°`,
+  16, 86
+);
+
+ctx.fillText(
+  `Position: ${bird.x.toFixed(0)}, ${bird.y.toFixed(0)}`,
+  16, 106
+);
+
 
 }
 
@@ -134,6 +154,7 @@ initInput();
 
 function update(deltaTime) {
   updateBird(bird, input, deltaTime);
+  updateFlightPhysics(bird, deltaTime, world);
 }
 
 startGame(update, render);
