@@ -17,23 +17,41 @@ export function createWillieWagtail() {
     grounded: true, perchedOn: null,
     glide: false, hopTimer: 0, hopAnimation: 0, peckAnimation: 0,
     tailPhase: 0, inventory: { grass: 0, twig: 0, web: 0, insects: 0 },
+    carrying: null, lastWingEvent: "none",
+    // Six wing keys produce distinct impulses. Continuous poses use eased values.
+    leftLiftImpulse: 0, rightLiftImpulse: 0,
+    leftThrustImpulse: 0, rightThrustImpulse: 0,
+    leftBrakeImpulse: 0, rightBrakeImpulse: 0,
+    leftWingPose: 0, rightWingPose: 0,
+    leftWingPulse: 0, rightWingPulse: 0,
+    leftHeld: false, rightHeld: false,
+    bank: 0, pitchVisual: 0, flightMode: "ground",
     message: "Find a perch, forage and build a nest", messageTime: 5
   };
 }
+
+// These are game-feel approximations, not literal wingbeat aerodynamics.
+// Every fresh key press is a flap; held keys select different glide postures.
+export const WING_EFFECTS = Object.freeze({
+  raised:  { lift: 0.58, thrust: 0.20, brake: 1.0 },
+  middle:  { lift: 1.15, thrust: 0.45, brake: 0.05 },
+  lowered: { lift: 0.83, thrust: 1.22, brake: 0 }
+});
 
 function applyWingEvent(bird, number) {
   const match = WING_KEYS[number];
   if (!match) return;
   const [side, position] = match;
-  const phaseKey = `${side}StrokePhase`;
+  const effect = WING_EFFECTS[position];
   bird[`${side}Wing`] = position;
-  bird[`${side}WingTimer`] = 0.6;
-  if (position === "raised") bird[phaseKey] = 1;
-  else if (position === "middle") bird[phaseKey] = bird[phaseKey] === 1 ? 2 : 0;
-  else if (position === "lowered") {
-    if (bird[phaseKey] >= 1) bird[`${side}FlapCount`] += 1; // Middle is optional for a more forgiving stroke
-    bird[phaseKey] = 0;
-  }
+  bird.lastWingEvent = `${side} ${position}`;
+  bird[`${side}WingTimer`] = 0.34;
+  bird[`${side}WingPulse`] = 1;
+  bird[`${side}LiftImpulse`] += effect.lift;
+  bird[`${side}ThrustImpulse`] += effect.thrust;
+  bird[`${side}BrakeImpulse`] += effect.brake;
+  bird[`${side}FlapCount`] += 1;
+  bird[`${side}StrokePhase`] = position === 'raised' ? 0 : position === 'middle' ? 1 : 2;
 }
 
 function hopOnGround(bird, controls, dt) {
@@ -55,10 +73,25 @@ function hopOnGround(bird, controls, dt) {
 export function updateBird(bird, controls, dt) {
   bird.pitch = controls.pitch;
   for (const number of controls.wingEvents.splice(0)) applyWingEvent(bird, number);
-  bird.leftWingTimer = Math.max(0, bird.leftWingTimer - dt);
-  bird.rightWingTimer = Math.max(0, bird.rightWingTimer - dt);
-  // Both wings held out support a controlled glide at sufficient airspeed.
-  bird.glide = controls.pressed.has("Numpad4") && controls.pressed.has("Numpad6");
+  const held = side => [side === 'left' ? '7' : '9', side === 'left' ? '4' : '6', side === 'left' ? '1' : '3']
+    .some(n => controls.pressed.has(`Numpad${n}`));
+  bird.leftHeld = held('left');
+  bird.rightHeld = held('right');
+  for (const side of ['left', 'right']) {
+    bird[`${side}WingTimer`] = Math.max(0, bird[`${side}WingTimer`] - dt);
+    bird[`${side}WingPulse`] = Math.max(0, bird[`${side}WingPulse`] - dt / 0.32);
+    const position = bird[`${side}Wing`];
+    const target = position === 'raised' ? -1 : position === 'lowered' ? 1 : 0;
+    bird[`${side}WingPose`] += (target - bird[`${side}WingPose`]) * (1 - Math.exp(-dt * 17));
+  }
+  const targetPitch = bird.pitch === 'forward' ? 1 : bird.pitch === 'backward' ? -1 : 0;
+  bird.pitchVisual += (targetPitch - bird.pitchVisual) * (1 - Math.exp(-dt * 10));
+  // A held matching pair selects flight mode. Tapping any key is still a flap.
+  bird.glide = bird.leftHeld && bird.rightHeld;
+  bird.flightMode = controls.pressed.has('Numpad4') && controls.pressed.has('Numpad6') ? 'glide' :
+    controls.pressed.has('Numpad7') && controls.pressed.has('Numpad9') ? 'flare' :
+    controls.pressed.has('Numpad1') && controls.pressed.has('Numpad3') ? 'fast-glide' :
+    bird.glide ? 'mixed-wing' : bird.grounded ? 'ground' : 'free-flight';
   bird.tailPhase += dt * (bird.grounded ? 11 : 7);
   bird.messageTime = Math.max(0, bird.messageTime - dt);
   bird.flapFeedbackTimer = Math.max(0, bird.flapFeedbackTimer - dt);
