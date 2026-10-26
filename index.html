@@ -1,0 +1,29 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+
+  <title>Bird Flight</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+
+<body>
+  <main id="game">
+    <canvas id="gameCanvas" width="640" height="640" aria-label="Bird flight game">
+      Your browser does not support HTML5 Canvas.
+    </canvas>
+
+    <div id="touchControls">
+      <button type="button" data-action="back">Back</button>
+      <button type="button" data-action="neutral">Neutral</button>
+      <button type="button" data-action="forward">Forward</button>
+      <button type="button" data-action="flapLeft">Left Flap</button>
+      <button type="button" data-action="flapRight">Right Flap</button>
+    </div>
+  </main>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
