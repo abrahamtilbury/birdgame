@@ -34,8 +34,21 @@ export function searchGround(bird, world) {
   }
   world.searchedPatches.add(key);
   const insect = deterministicRoll(ix, iy) < 0.27;
-  if (insect) bird.inventory.insects++;
-  setBirdMessage(bird, insect ? "Caught an insect!" : "No insects in this patch");
+  if (insect) {
+    bird.inventory.insects++;
+  
+    bird.hunger = Math.min(
+      100,
+      (bird.hunger ?? 80) + 20
+    );
+  }
+  
+  setBirdMessage(
+    bird,
+    insect
+      ? `Ate an insect! Hunger ${Math.round(bird.hunger)}/100`
+      : "No insects in this patch"
+  );
 }
 
 export function useNest(bird, world) {
@@ -73,7 +86,7 @@ export function useNest(bird, world) {
   }
   const type = bird.carrying;
   if (!type || bird.inventory[type] < 1) {
-    setBirdMessage(bird, "Find grass, a twig, or spiderweb to carry");
+    setBirdMessage(bird, "Find grass or a fallen twig to carry");
     return;
   }
   if (nest.progress[type] >= nest.required[type]) {
@@ -83,6 +96,8 @@ export function useNest(bird, world) {
   bird.inventory[type]--;
   bird.carrying = null;
   nest.progress[type]++;
-  nest.built = ["grass", "twig", "web"].every(t => nest.progress[t] >= nest.required[t]);
+  nest.built = ["grass", "twig"].every(
+    type => nest.progress[type] >= nest.required[type]
+  );
   setBirdMessage(bird, nest.built ? "Nest complete!" : `Added ${type} to your nest`);
 }
