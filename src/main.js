@@ -16,6 +16,22 @@ const world = createWorld();
 const bird = createWillieWagtail();
 const camera = createCamera(canvas.width, canvas.height);
 updateCamera(camera, bird);
+
+const gameElement = document.getElementById("game");
+
+// Grounded: touchscreen 8/4/2/6 are brown direction arrows.
+// Airborne: the same keys return to normal flight controls.
+function syncTouchMode() {
+  input.touchGroundMode = bird.grounded;
+
+  gameElement.classList.toggle(
+    "ground-touch-mode",
+    bird.grounded
+  );
+}
+
+syncTouchMode();
+
 // Read-only browser Console snapshot for diagnosing real keyboard behaviour.
 window.birdFlightDebug = () => ({
   altitude: Number(bird.altitude.toFixed(3)),
@@ -51,6 +67,33 @@ function update(dt) {
   resolveCollisions(bird, world, previous);
 
   for (const action of actions) {
+    
+    if (action === "KeyX") {
+      const item = bird.carrying;
+    
+      if (item) {
+        bird.carrying = null;
+    
+        bird.inventory[item] = Math.max(
+          0,
+          (bird.inventory[item] || 0) - 1
+        );
+    
+        // Return dropped material to the ground.
+        world.groundResources.push({
+          id: `dropped-${world.groundResources.length}`,
+          type: item,
+          x: bird.x,
+          y: bird.y,
+          collected: false
+        });
+    
+        setBirdMessage(bird, `Dropped ${item} — beak free`);
+      } else {
+        setBirdMessage(bird, "Beak already empty");
+      }
+    }
+
     if (action === "Space") {
       if (bird.grounded) searchGround(bird, world);
       else if (bird.perchedOn) setBirdMessage(bird,
@@ -71,6 +114,7 @@ function update(dt) {
   }
   updateMate(world, dt);
   updateCamera(camera, bird);
+  syncTouchMode();
 }
 
 function render() {
