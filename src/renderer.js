@@ -174,44 +174,115 @@ function drawNest(ctx, world) {
     ctx.fillText("NEST", x - 12, y - r - 8);
   }
 }
+
 function drawWing(ctx, side, state, bird) {
-  const name = side < 0 ? 'left' : 'right';
-  const active = bird[`${name}WingTimer`] > 0;
-  const holding = bird[`${name}Held`];
-  if (!active && !holding && bird.grounded) {
-    polygon(ctx, [[side * 7, -7], [side * 17, -6], [side * 13, 19], [side * 8, 8]], '#1D2934');
+  const name = side < 0 ? "left" : "right";
+
+  const extension = Math.max(
+    0,
+    Math.min(1, bird[`${name}WingFold`] || 0)
+  );
+
+  const pose = bird[`${name}WingPose`] || 0;
+
+  const pulse = Math.max(
+    0,
+    Math.min(1, bird[`${name}WingPulse`] || 0)
+  );
+
+  // Folded wings lie against the torso.
+  if (extension < 0.07) {
+    polygon(ctx, [
+      [side * 8, -9],
+      [side * 16, -6],
+      [side * 15, 14],
+      [side * 9, 12]
+    ], "#293542");
+
     return;
   }
-  const pose = bird[`${name}WingPose`] ?? 0;
-  const pulse = Math.max(0, Math.min(1, bird[`${name}WingPulse`] || 0));
-  // Ease through a full visible wing arc instead of snapping to the key pose.
-  const sweep = Math.sin(pulse * Math.PI) * 19;
-  const reach = 68 - 18 * Math.abs(pose) + sweep * 0.32;
-  const tipY = -18 + pose * 47 - sweep;
-  const x = reach * side;
-  polygon(ctx, [[side * 10, -11], [x * 0.79, tipY - 14], [x, tipY],
-    [x * 0.89, tipY + 11], [side * 10, 12]], '#242C37', '#17222C');
-  // Feather-tip highlights only; white belly remains on the body, not the wings.
-  for (let i = 1; i <= 3; i++) {
-    const fraction = i / 4;
-    segment(ctx, x * (0.70 + fraction * 0.22), tipY + 3,
-      x * (0.74 + fraction * 0.21), tipY + 8 + i * 1.4, 1, '#515B60');
+
+  // Articulated shoulder, elbow and wrist.
+  const beat = Math.sin(pulse * Math.PI);
+  const bankOffset = (bird.bank || 0) * side * 7;
+
+  const shoulder = {
+    x: side * 10,
+    y: -8
+  };
+
+  const elbow = {
+    x: side * (15 + 18 * extension),
+    y: -9 + pose * 11 - beat * 7 + bankOffset
+  };
+
+  const wrist = {
+    x: side * (20 + 42 * extension),
+    y: -12 + pose * 30 - beat * 16 + bankOffset * 2
+  };
+
+  // Main wing surface.
+  polygon(ctx, [
+    [shoulder.x, shoulder.y - 5],
+    [elbow.x, elbow.y - 9],
+    [wrist.x, wrist.y - 7],
+    [wrist.x, wrist.y + 8],
+    [elbow.x, elbow.y + 10],
+    [shoulder.x, shoulder.y + 9]
+  ], "#27333E", "#1C2933");
+
+  // Seven individual primary feathers.
+  for (let i = 0; i < 7; i++) {
+    const fraction = i / 6;
+
+    const rootX =
+      elbow.x +
+      (wrist.x - elbow.x) *
+      (0.45 + fraction * 0.48);
+
+    const rootY =
+      elbow.y +
+      (wrist.y - elbow.y) *
+      (0.45 + fraction * 0.48);
+
+    const featherLength =
+      (7 + 13 * extension) *
+      (1 - fraction * 0.24);
+
+    const tipX = rootX + side * featherLength;
+
+    const tipY =
+      rootY +
+      (i - 3) * 3.5 * extension +
+      pose * 3;
+
+    // Overlapping diamond-like feather polygons.
+    polygon(ctx, [
+      [rootX - side * 3, rootY - 2],
+      [rootX + side * 3, rootY - 3],
+      [tipX, tipY],
+      [rootX + side * 2, rootY + 4]
+    ],
+    i % 2 ? "#394650" : "#45505A",
+    "#25323B");
   }
 }
+
 function drawBird(ctx, bird, x, y, isMate = false) {
   ctx.save();
   const heading = bird.heading || 0;
-  const hopBob = bird.hopAnimation > 0 ? Math.sin((bird.hopAnimation / 0.16) * Math.PI) * 5 : 0;
+  const hopBob = bird.hopAnimation > 0
+    ? Math.sin((bird.hopAnimation / 0.125) * Math.PI) * 6
+    : 0;
   ctx.translate(x, y - hopBob); ctx.rotate(heading);
-  // 2.5D tilt: foreshorten and shift the entire body when diving or flaring.
-  // Bank is a consequence of unequal wing forces, not a direct arrow-key yaw.
-  if (!isMate) {
-    const pitch = bird.pitchVisual || 0;
-    ctx.transform(1, 0, (bird.bank || 0) * 0.36, 1, 0, 0);
-    ctx.translate(0, pitch * 5);
-    ctx.scale(1 + Math.max(0, -pitch) * 0.06, 1 - pitch * 0.19);
-  }
-  ctx.scale(isMate ? 0.66 : 1, isMate ? 0.66 : 1);
+  // Rigid body: never stretch, squash or shear the bird.
+// Head, wing joints and tail convey pitch and bank.
+if (!isMate) {
+  ctx.translate(0, (bird.pitchVisual || 0) * 2);
+}
+
+// Uniform size reduction is used only for the smaller mate.
+ctx.scale(isMate ? 0.66 : 1, isMate ? 0.66 : 1);
   
   const wag = Math.sin(bird.tailPhase || bird.phase || 0) * 5;
   
@@ -257,12 +328,16 @@ function drawBird(ctx, bird, x, y, isMate = false) {
 
   drawWing(ctx, -1, bird.leftWing, bird);
   drawWing(ctx, 1, bird.rightWing, bird);
-  // The white patch is on the breast/belly, NOT the wings.
-  ctx.fillStyle = '#F1F0E6';
-  ctx.beginPath(); ctx.ellipse(0, 10, 10.3, 15, 0, 0, TWO_PI); ctx.fill();
-  // Dark upper back leaves the lower white belly exposed on this top-down sprite.
-  ctx.fillStyle = '#24303A';
-  ctx.beginPath(); ctx.ellipse(0, -5, 11.4, 15, 0, 0, TWO_PI); ctx.fill();
+  // Top-down view: dark back, very thin white flank rim.
+  ctx.fillStyle = "#E8E8E0";
+  ctx.beginPath();
+  ctx.ellipse(0, 6, 12.1, 18, 0, 0, TWO_PI);
+  ctx.fill();
+  
+  ctx.fillStyle = "#24303A";
+  ctx.beginPath();
+  ctx.ellipse(0, 3, 11.5, 22, 0, 0, TWO_PI);
+  ctx.fill();
   const pitchHead = -(bird.pitchVisual ?? 0) * 12 -
     (bird.peckAnimation > 0 ? 7 : 0);
   const headY = -21 + pitchHead;
@@ -325,7 +400,7 @@ function drawHud(ctx, bird, world, controls) {
     `Last key: ${controls?.lastInput || "none"} | Wing ${bird.lastWingEvent}`,
     `Position ${bird.x.toFixed(0)}, ${bird.y.toFixed(0)}`,
     bird.perchedOn ? `PERCHED ${bird.perchedOn.branchId}` : bird.grounded ? "GROUND: WASD to hop" : "FLYING: hold 4+6 to glide",
-    `Beak: ${bird.carrying || "empty"} | Insects: ${bird.inventory.insects}`,
+    `Beak: ${bird.carrying || "empty"} | Insects eaten: ${bird.inventory.insects}`,
     world.nest.started
       ? `Nest G:${world.nest.progress.grass}/${world.nest.required.grass} T:${world.nest.progress.twig}/${world.nest.required.twig} W:${world.nest.progress.web}/${world.nest.required.web}`
       : "Nest: take a twig to a suitable branch (N)",
@@ -343,6 +418,47 @@ function drawHud(ctx, bird, world, controls) {
   }
   ctx.restore();
 }
+
+
+function drawHunger(ctx, bird) {
+  const hunger = Math.max(
+    0,
+    Math.min(100, bird.hunger ?? 80)
+  );
+
+  const x = 16;
+  const y = 254;
+  const width = 182;
+
+  ctx.save();
+
+  ctx.font = "13px monospace";
+  ctx.fillStyle = "#1D3226";
+
+  ctx.fillText(
+    `HUNGER ${Math.round(hunger)}/100`,
+    x, y - 5
+  );
+
+  // Background of meter.
+  ctx.fillStyle = "#314536";
+  ctx.fillRect(x, y + 13, width, 10);
+
+  // Green -> amber -> red.
+  ctx.fillStyle =
+    hunger < 20 ? "#D76B5B" :
+    hunger < 45 ? "#E6B45A" :
+    "#8ECB78";
+
+  ctx.fillRect(
+    x, y + 13,
+    width * hunger / 100,
+    10
+  );
+
+  ctx.restore();
+}
+
 
 function drawAltitudeGauge(ctx, bird) {
   const x = ctx.canvas.width - 29, top = 55, trackHeight = 175;
@@ -406,5 +522,6 @@ export function renderScene(ctx, world, bird, camera, controls = null) {
   drawOverheadFoliage(ctx, world, bird, camera);
   drawVignette(ctx, width, height, bird);
   drawHud(ctx, bird, world, controls);
+  drawHunger(ctx, bird);
   drawAltitudeGauge(ctx, bird);
 }
