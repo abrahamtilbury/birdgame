@@ -85,8 +85,9 @@ function createResources(trees) {
       const branch = tree.branches[n % tree.branches.length];
       const angle = Math.atan2(branch.y2, branch.x2) + (random() - 0.5) * 1.2;
       const radius = (0.40 + random() * 0.70) * tree.canopy.radius;
-      const type = n < Math.ceil(count * 0.55) ? 'twig' :
-        random() < 0.66 ? 'grass' : 'web';
+      const type = n < Math.ceil(count * 0.55)
+        ? "twig"
+        : "grass";
       resources.push({
         id: `${tree.id}-item-${n + 1}`, type,
         x: clamp(tree.x + Math.cos(angle) * radius, 24, 2576),
@@ -128,15 +129,32 @@ export function createWorld() {
       treeId: nestTree.id, branchId: nestBranch.id,
       point: nestBranch.perchPoints[0],
       progress: { grass: 0, twig: 0, web: 0 },
-      required: { grass: 3, twig: 1, web: 1 }, built: false
+      required: { grass: 3, twig: 1, web: 0 }, built: false
     },
     mate: { x: 355, y: 337, altitude: 0, phase: 0, heading: 1.4,
       grounded: true, hopTimer: 0, hopAnimation: 0 },
     windAt(x, y, altitude) {
       if (altitude < 1) return { x: 0, y: 0, up: 0 };
       const t = this.time;
-      const xWind = 3.1 * Math.sin(t * 0.23 + y / 270);
-      const yWind = 2.1 * Math.cos(t * 0.31 + x / 295);
+      
+      const exposure = clamp(altitude / 40, 0, 1);
+      
+      const xWind =
+        (2.0 + 5.0 * exposure) *
+        Math.sin(
+          t * 0.23 +
+          y / 270 +
+          exposure * 1.3
+        );
+      
+      const yWind =
+        (1.4 + 3.5 * exposure) *
+        Math.cos(
+          t * 0.31 +
+          x / 295 -
+          exposure * 0.8
+        );
+
       let up = 0;
       for (const tree of trees) {
         const d = Math.hypot(x - tree.x, y - tree.y);
