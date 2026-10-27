@@ -72,3 +72,107 @@ body {
 /* The displayed numpad is a playable touch/mouse alternative. */
 #keypad kbd { cursor: pointer; touch-action: none; }
 #keypad kbd:focus-visible { outline: 3px solid #fff3bd; outline-offset: 2px; }
+
+/* iPhone/touch controls. Hide the extra pad on large keyboard-driven screens. */
+#touchControls { display: none; }
+
+#touchControls .touch-key {
+  appearance: none;
+  -webkit-appearance: none;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 44px;
+  border: 1px solid #52705a;
+  border-radius: 8px;
+  background: #21372b;
+  color: #fff;
+  font: 700 16px/1 system-ui, sans-serif;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+#touchControls .touch-key.pressed {
+  background: #d8a954;
+  border-color: #ffe2a5;
+  color: #18251b;
+}
+#touchControls .touch-key:focus-visible,
+#keypad kbd:focus-visible {
+  outline: 3px solid #fff3bd;
+  outline-offset: 2px;
+}
+
+#movePad {
+  display: grid;
+  grid-template-columns: repeat(3, 45px);
+  grid-template-rows: repeat(2, 45px);
+  gap: 5px;
+  flex: 0 0 auto;
+}
+#movePad .move-up { grid-column: 2; grid-row: 1; }
+#movePad .move-left { grid-column: 1; grid-row: 2; }
+#movePad .move-down { grid-column: 2; grid-row: 2; }
+#movePad .move-right { grid-column: 3; grid-row: 2; }
+
+#actionPad { display: flex; flex-direction: column; gap: 5px; flex: 0 1 175px; }
+#actionPad .action-key { min-height: 45px; gap: 7px; }
+#actionPad .action-key small { font: 500 12px/1 system-ui, sans-serif; }
+
+@media (max-width: 680px), (pointer: coarse) {
+  body { display: block; }
+  #game {
+    width: min(640px, 96vw);
+    margin: 0 auto;
+    gap: 8px;
+    padding: 4px 0 max(8px, env(safe-area-inset-bottom));
+  }
+  #gameCanvas {
+    width: min(100%, calc(100dvh - 333px));
+    margin: 0 auto;
+  }
+  #keypad { grid-template-columns: repeat(3, 48px); gap: 5px; }
+  #keypad kbd { width: 48px; height: 48px; font-size: 18px; }
+  #touchControls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+  }
+  .controls { font-size: 11px; line-height: 1.3; margin: 0 8px; }
+}
+@media (max-height: 630px) and (max-width: 680px) {
+  #gameCanvas { width: min(100%, calc(100dvh - 306px)); }
+  #keypad kbd { width: 44px; height: 44px; }
+  #keypad { grid-template-columns: repeat(3, 44px); }
+}
+
+/* Ground mode on touchscreens: 8/4/2/6 act as a directional pad.
+   Keyboard users retain the original numpad flight behaviour. */
+#keypad .ground-label { display: none; }
+@media (pointer: coarse) {
+  #game.ground-touch-mode #keypad kbd:is(
+    [data-key="Numpad8"], [data-key="Numpad4"],
+    [data-key="Numpad2"], [data-key="Numpad6"]
+  ) {
+    background: #735437;
+    border-color: #b88b58;
+    color: #fff0d5;
+  }
+  #game.ground-touch-mode #keypad kbd:is(
+    [data-key="Numpad8"], [data-key="Numpad4"],
+    [data-key="Numpad2"], [data-key="Numpad6"]
+  ).pressed { background: #c49a43; color: #1c2119; }
+  #game.ground-touch-mode #keypad kbd:is(
+    [data-key="Numpad8"], [data-key="Numpad4"],
+    [data-key="Numpad2"], [data-key="Numpad6"]
+  ) .flight-label { display: none; }
+  #game.ground-touch-mode #keypad kbd:is(
+    [data-key="Numpad8"], [data-key="Numpad4"],
+    [data-key="Numpad2"], [data-key="Numpad6"]
+  ) .ground-label { display: inline; font-size: 22px; }
+}

@@ -15,16 +15,30 @@
     </canvas>
     <div id="keypad" aria-label="Flight controls: 7 8 9, 4 5 6, 1 2 3">
       <kbd data-key="Numpad7">7</kbd>
-      <kbd data-key="Numpad8" class="pitch">8</kbd>
+      <kbd data-key="Numpad8" class="pitch"><span class="flight-label">8</span><span class="ground-label" aria-hidden="true">▲</span></kbd>
       <kbd data-key="Numpad9">9</kbd>
-      <kbd data-key="Numpad4">4</kbd>
+      <kbd data-key="Numpad4"><span class="flight-label">4</span><span class="ground-label" aria-hidden="true">◀</span></kbd>
       <kbd data-key="Numpad5" class="pitch">5</kbd>
-      <kbd data-key="Numpad6">6</kbd>
+      <kbd data-key="Numpad6"><span class="flight-label">6</span><span class="ground-label" aria-hidden="true">▶</span></kbd>
       <kbd data-key="Numpad1">1</kbd>
-      <kbd data-key="Numpad2" class="pitch">2</kbd>
+      <kbd data-key="Numpad2" class="pitch"><span class="flight-label">2</span><span class="ground-label" aria-hidden="true">▼</span></kbd>
       <kbd data-key="Numpad3">3</kbd>
     </div>
-    <p class="controls">WASD hop · Space peck / grab branch · N build nest · 7+9 flare flap · 4+6 lifting flap / glide · 1+3 thrust flap · 8 dive · 5 level · 2 flare</p>
+    <!-- Mobile controls: buttons use the same data-key values as physical keys. -->
+    <section id="touchControls" aria-label="On-screen ground and action controls">
+      <div id="movePad" aria-label="Hop with W, A, S, D">
+        <button type="button" class="touch-key move-up" data-key="KeyW" aria-label="Hop north">W ▲</button>
+        <button type="button" class="touch-key move-left" data-key="KeyA" aria-label="Hop west">A ◀</button>
+        <button type="button" class="touch-key move-down" data-key="KeyS" aria-label="Hop south">S ▼</button>
+        <button type="button" class="touch-key move-right" data-key="KeyD" aria-label="Hop east">D ▶</button>
+      </div>
+      <div id="actionPad" aria-label="Bird actions">
+        <button type="button" class="touch-key action-key" data-key="Space">SPACE <small>Peck / Grip</small></button>
+        <button type="button" class="touch-key action-key" data-key="KeyN">N <small>Build Nest</small></button>
+        <button type="button" class="touch-key action-key" data-key="KeyX">X <small>Drop Item</small></button>
+      </div>
+    </section>
+    <p class="controls">WASD hop · Space peck / grab branch · N build nest · X drop item · 7+9 flare flap · 4+6 lifting flap / glide · 1+3 thrust flap · 8 dive · 5 level · 2 flare</p>
   </main>
   <script type="module" src="./src/main.js"></script>
 </body>
