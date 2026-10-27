@@ -212,11 +212,49 @@ function drawBird(ctx, bird, x, y, isMate = false) {
     ctx.scale(1 + Math.max(0, -pitch) * 0.06, 1 - pitch * 0.19);
   }
   ctx.scale(isMate ? 0.66 : 1, isMate ? 0.66 : 1);
+  
   const wag = Math.sin(bird.tailPhase || bird.phase || 0) * 5;
-  // Wagtail: triangular, slightly fanned wedge (black with pale feather edges).
-  polygon(ctx, [[-6, 11], [-17 + wag, 49], [wag, 43], [17 + wag, 49], [6, 11]], "#242D36");
-  segment(ctx, -11 + wag, 44, -4 + wag, 17, 1.4, "#DFE1D8");
-  segment(ctx, 11 + wag, 44, 4 + wag, 17, 1.4, "#DFE1D8");
+  
+  // Fan opens during a flare and narrows during a dive.
+  const tailSpread = bird.tailSpread ?? 0.35;
+  const fanWidth = 8 + 12 * tailSpread;
+  
+  // Tail twists slightly to coordinate a bank.
+  const tailTwist = (bird.tailTwist || 0) * 7;
+  
+  polygon(
+    ctx,
+    [
+      [-6, 11],
+      [-fanWidth + wag + tailTwist, 49],
+      [wag + tailTwist, 43],
+      [fanWidth + wag + tailTwist, 49],
+      [6, 11]
+    ],
+    "#242D36"
+  );
+  
+  // Pale outer tail-feather markings.
+  segment(
+    ctx,
+    -fanWidth * 0.65 + wag + tailTwist,
+    44,
+    -4,
+    17,
+    1.4,
+    "#DFE1D8"
+  );
+  
+  segment(
+    ctx,
+    fanWidth * 0.65 + wag + tailTwist,
+    44,
+    4,
+    17,
+    1.4,
+    "#DFE1D8"
+  );
+
   drawWing(ctx, -1, bird.leftWing, bird);
   drawWing(ctx, 1, bird.rightWing, bird);
   // The white patch is on the breast/belly, NOT the wings.
@@ -281,7 +319,7 @@ function drawHud(ctx, bird, world, controls) {
   const lines = [
     `ALT ${bird.altitude.toFixed(2)} m | VZ ${bird.velocityZ.toFixed(2)} m/s`,
     `Speed ${speed.toFixed(0)} px/s | Heading ${(bird.heading * 180 / Math.PI).toFixed(0)}°`,
-    `Pitch ${bird.pitch} | Wings ${bird.flightMode} | Bank ${(bird.bank || 0).toFixed(2)}`,
+    `Pitch ${bird.pitch} | ${bird.flightMode} | Bank ${Math.round((bird.bank || 0) * 180 / Math.PI)} deg`,
     `Wing L ${bird.leftWing} / R ${bird.rightWing}`,
     `FLAPS ${bird.totalFlaps || 0}  | AIRSPEED ${(bird.airspeed || 0).toFixed(0)}`,
     `Last key: ${controls?.lastInput || "none"} | Wing ${bird.lastWingEvent}`,
