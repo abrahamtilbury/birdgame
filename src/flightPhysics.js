@@ -21,15 +21,15 @@ export const FLIGHT = Object.freeze({
   stallSpeed: 12,
 
   // Rotational dynamics.
-  rollImpulse: 3.0,
-  rollRestoring: 7.0,
-  rollDamping: 4.7,
+  rollImpulse: 3.8,
+  rollRestoring: 9.0,
+  rollDamping: 5.4,
   heldRollTorque: 0.95,
   maxBank: 1.02,
 
   // Bank-generated turning.
-  lateralAcceleration: 145,
-  yawResponse: 9
+  lateralAcceleration: 160,
+  yawResponse: 11
 });
 
 const clamp = (n, low, high) =>
