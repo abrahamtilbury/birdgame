@@ -25,7 +25,13 @@ export function createWillieWagtail() {
     leftWingPose: 0, rightWingPose: 0,
     leftWingPulse: 0, rightWingPulse: 0,
     leftHeld: false, rightHeld: false,
-    bank: 0, pitchVisual: 0, flightMode: "ground",
+    bank: 0,
+    rollRate: 0,
+    yawRate: 0,
+    tailSpread: 0.35,
+    tailTwist: 0,
+    pitchVisual: 0,
+    flightMode: "ground",
     message: "Find a perch, forage and build a nest", messageTime: 5
   };
 }
