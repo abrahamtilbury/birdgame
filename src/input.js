@@ -8,7 +8,7 @@ const pitchByNumber = {
 };
 
 const actionCodes = new Set([
-  "Space", "KeyE", "KeyN", "KeyF", "KeyT", "KeyX"
+  "Space", "KeyE", "KeyN", "KeyF", "KeyX"
 ]);
 
 const groundCodes = new Set([
