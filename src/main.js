@@ -38,6 +38,21 @@ window.birdFlightDebug = () => ({
   verticalSpeed: Number(bird.velocityZ.toFixed(3)),
   flaps: bird.totalFlaps,
   lastKey: input.lastInput,
+
+  lastHoldMs: input.lastHoldMs === null
+    ? null
+    : Number(input.lastHoldMs.toFixed(1)),
+  
+  lastWingGapMs: input.lastWingGapMs === null
+    ? null
+    : Number(input.lastWingGapMs.toFixed(1)),
+  
+  completedWingbeats: bird.completedWingbeats,
+  
+  lastStrokePower: Number(
+    bird.lastStrokePower.toFixed(2)
+  ),
+  
   lastWingEvent: bird.lastWingEvent,
   grounded: bird.grounded,
   carrying: bird.carrying,
