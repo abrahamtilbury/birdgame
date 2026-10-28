@@ -1,4 +1,4 @@
-# Bird Flight — Willie Wagtail, v0.4
+# Bird Flight — Willie Wagtail, v0.11
 
 A top-down 2.5D browser game. The world uses X/Y in pixels and independent Z altitude in gameplay metres. All rendering uses HTML Canvas, with no library dependencies.
 
@@ -28,7 +28,9 @@ The same sources can be hosted on GitHub Pages. Upload the *contents* of the ext
 | F | Land on a nearby valid perch when within horizontal/vertical reach |
 | E | Add carried materials at the marked nest site |
 
-Digit-row keys and physical Numpad keys both work. Both paired wing buttons should be released before the next row to get fresh keydown events. The HUD shows `FLAPS`; if this doesn't increase, the stroke was not registered. A two-wing stroke adds **two** to that count.
+Digit-row and physical Numpad keys both work. Each fresh wing-key press generates one primitive wing input; holding a key maintains its pose without automatic flapping.
+A complete left-wing cycle is 7 → 4 → 1. A complete right-wing cycle is 9 → 6 → 3. Finishing a cycle faster increases the final power-stroke impulse, up to the configured cap.
+The HUD displays WING INPUTS and CYCLES separately. Release and repress a key to generate another command. Hold 4+6 to extend both wings for gliding.
 
 ## Debugging flight
 
