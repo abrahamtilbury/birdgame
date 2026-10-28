@@ -16,7 +16,7 @@ export const FLIGHT = Object.freeze({
 
   horizontalDrag: 0.38,
   verticalDrag: 0.15,
-  forwardAccel: 23,
+  diveExchange: 2.8,
   glidingLift: 8,
   stallSpeed: 12,
 
@@ -257,17 +257,17 @@ export function updateFlightPhysics(bird, dt, world) {
 
   bird.heading += bird.yawRate * dt;
 
-  // 11. Forward pitch produces acceleration.
+  // 11. Diving exchanges altitude for forward speed.
+  // This does not create powered thrust without a wingbeat.
   const newForwardX = Math.sin(bird.heading);
   const newForwardY = -Math.cos(bird.heading);
 
-  if (bird.pitch === "forward") {
-    bird.velocityX +=
-      newForwardX * FLIGHT.forwardAccel * dt;
+  const diveAcceleration = bird.pitch === "forward"
+    ? Math.max(0, -bird.velocityZ) * FLIGHT.diveExchange
+    : 0;
 
-    bird.velocityY +=
-      newForwardY * FLIGHT.forwardAccel * dt;
-  }
+  bird.velocityX += newForwardX * diveAcceleration * dt;
+  bird.velocityY += newForwardY * diveAcceleration * dt;
 
   // 12. Drag acts on speed relative to air.
   const drag =
