@@ -57,6 +57,65 @@ function drawGround(ctx, world, camera) {
   }
 }
 
+
+function drawWindStreaks(ctx, world, bird, camera) {
+  if (bird.altitude < 2) return;
+
+  const step = 140;
+  const right = camera.x + camera.width / camera.zoom;
+  const bottom = camera.y + camera.height / camera.zoom;
+
+  ctx.save();
+  ctx.lineWidth = 1.3;
+  ctx.lineCap = "round";
+
+  for (
+    let y = Math.floor(camera.y / step) * step;
+    y < bottom;
+    y += step
+  ) {
+    for (
+      let x = Math.floor(camera.x / step) * step;
+      x < right;
+      x += step
+    ) {
+      const wind = world.windAt(x, y, bird.altitude);
+      const speed = Math.hypot(wind.x, wind.y);
+
+      if (speed < 0.8) continue;
+
+      const dx = wind.x / speed;
+      const dy = wind.y / speed;
+
+      const drift =
+        (world.time * speed * 2.3) % step;
+
+      const sx = x + 50 + dx * drift;
+      const sy = y + 50 + dy * drift;
+
+      const length = Math.min(30, 8 + speed * 2);
+      const opacity = Math.min(
+        0.25,
+        0.06 + speed * 0.015
+      );
+
+      ctx.strokeStyle =
+        `rgba(231,245,232,${opacity})`;
+
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(
+        sx + dx * length,
+        sy + dy * length
+      );
+      ctx.stroke();
+    }
+  }
+
+  ctx.restore();
+}
+
+
 function drawShrubs(ctx, world) {
   for (const shrub of world.shrubs) {
     disk(ctx, shrub.x + 4, shrub.y + 6, shrub.radius * 1.1, "rgba(24,51,36,.17)");
@@ -163,7 +222,7 @@ function drawNest(ctx, world) {
   const nest = world.nest;
   if (!nest.started) return; // Players choose the branch by delivering the first twig.
   const { x, y } = nest.point;
-  const materialCount = nest.progress.grass + nest.progress.twig + nest.progress.web;
+  const materialCount = nest.progress.grass + nest.progress.twig;
   const r = 5 + materialCount * 1.5;
   disk(ctx, x + 3, y + 4, r + 2, "rgba(16,37,25,.36)");
   disk(ctx, x, y, r, nest.built ? "#866A47" : "#B09564");
@@ -338,8 +397,9 @@ ctx.scale(isMate ? 0.66 : 1, isMate ? 0.66 : 1);
   ctx.beginPath();
   ctx.ellipse(0, 3, 11.5, 22, 0, 0, TWO_PI);
   ctx.fill();
-  const pitchHead = -(bird.pitchVisual ?? 0) * 12 -
-    (bird.peckAnimation > 0 ? 7 : 0);
+  // The torso remains rigid; head movement is restrained.
+  const pitchHead = -(bird.pitchVisual ?? 0) * 3.5 -
+    (bird.peckAnimation > 0 ? 3 : 0);
   const headY = -21 + pitchHead;
   disk(ctx, 0, headY, 12, "#202B35");
   // Distinctive white eyebrow arcs.
@@ -402,7 +462,7 @@ function drawHud(ctx, bird, world, controls) {
     bird.perchedOn ? `PERCHED ${bird.perchedOn.branchId}` : bird.grounded ? "GROUND: WASD to hop" : "FLYING: hold 4+6 to glide",
     `Beak: ${bird.carrying || "empty"} | Insects eaten: ${bird.inventory.insects}`,
     world.nest.started
-      ? `Nest G:${world.nest.progress.grass}/${world.nest.required.grass} T:${world.nest.progress.twig}/${world.nest.required.twig} W:${world.nest.progress.web}/${world.nest.required.web}`
+      ? `Nest G:${world.nest.progress.grass}/${world.nest.required.grass} T:${world.nest.progress.twig}/${world.nest.required.twig}`
       : "Nest: take a twig to a suitable branch (N)",
     bird.grounded ? "Space: peck | 7/9 flare 4/6 lift 1/3 thrust" :
       bird.perchedOn ? "PERCHED N: build with material | any wing: takeoff" :
@@ -460,6 +520,65 @@ function drawHunger(ctx, bird) {
 }
 
 
+function drawWindIndicator(ctx, bird, world) {
+  const wind = world.windAt?.(
+    bird.x, bird.y, bird.altitude
+  ) ?? { x: 0, y: 0, up: 0 };
+
+  const speed = Math.hypot(wind.x, wind.y);
+  const x = 464;
+  const y = 70;
+
+  ctx.save();
+
+  // Separate panel, clear of the main HUD and altitude bar.
+  ctx.fillStyle = "rgba(16,33,23,.84)";
+  ctx.fillRect(382, 8, 170, 118);
+
+  ctx.fillStyle = "#E6F0DD";
+  ctx.font = "12px monospace";
+  ctx.textBaseline = "top";
+
+  ctx.fillText(
+    `WIND ${speed.toFixed(1)} px/s`,
+    391, 17
+  );
+
+  ctx.fillText(
+    `ALT ${bird.altitude.toFixed(0)} m`,
+    391, 105
+  );
+
+  ctx.strokeStyle = "rgba(222,243,211,.30)";
+  ctx.beginPath();
+  ctx.arc(x, y, 30, 0, Math.PI * 2);
+  ctx.stroke();
+
+  if (speed > 0.1) {
+    ctx.translate(x, y);
+    ctx.rotate(Math.atan2(wind.y, wind.x));
+
+    const length = Math.min(28, 9 + speed * 2);
+
+    ctx.strokeStyle = "#AEE4F8";
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+
+    ctx.beginPath();
+    ctx.moveTo(-length / 2, 0);
+    ctx.lineTo(length / 2, 0);
+    ctx.lineTo(length / 2 - 8, -6);
+    ctx.moveTo(length / 2, 0);
+    ctx.lineTo(length / 2 - 8, 6);
+    ctx.stroke();
+  } else {
+    ctx.fillText("CALM", x - 17, y - 5);
+  }
+
+  ctx.restore();
+}
+
+
 function drawAltitudeGauge(ctx, bird) {
   const x = ctx.canvas.width - 29, top = 55, trackHeight = 175;
   ctx.save();
@@ -485,6 +604,7 @@ export function renderScene(ctx, world, bird, camera, controls = null) {
   ctx.fillStyle = "#324237"; ctx.fillRect(0, 0, width, height);
   ctx.save(); ctx.scale(camera.zoom, camera.zoom); ctx.translate(-camera.x, -camera.y);
   drawGround(ctx, world, camera);
+  drawWindStreaks(ctx, world, bird, camera);
   drawShrubs(ctx, world);
   drawResources(ctx, world, bird.altitude);
   drawTrees(ctx, world, bird, camera);
@@ -523,5 +643,6 @@ export function renderScene(ctx, world, bird, camera, controls = null) {
   drawVignette(ctx, width, height, bird);
   drawHud(ctx, bird, world, controls);
   drawHunger(ctx, bird);
+  drawWindIndicator(ctx, bird, world);
   drawAltitudeGauge(ctx, bird);
 }
