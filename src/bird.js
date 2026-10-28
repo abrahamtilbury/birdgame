@@ -4,6 +4,15 @@ const WING_KEYS = {
   9: ["right", "raised"], 6: ["right", "middle"], 3: ["right", "lowered"]
 };
 
+// Visual speed only. Powered strokes require a new input.
+const WINGBEAT_SECONDS = 1 / 12;
+
+// Maximum time to complete 7->4->1 or 9->6->3.
+const STROKE_WINDOW_MS = 650;
+
+const clamp = (n, lo, hi) =>
+  Math.max(lo, Math.min(hi, n));
+
 export function createWillieWagtail() {
   return {
     species: "willie-wagtail", x: 320, y: 320, altitude: 0,
@@ -12,7 +21,11 @@ export function createWillieWagtail() {
     leftWing: "rest", rightWing: "rest",
     leftStrokePhase: 0, rightStrokePhase: 0,
     leftFlapCount: 0, rightFlapCount: 0,
-    totalFlaps: 0, flapFeedbackTimer: 0, airspeed: 0,
+    totalFlaps: 0,
+    completedWingbeats: 0,
+    lastStrokePower: 1,
+    flapFeedbackTimer: 0,
+    airspeed: 0,
     leftWingTimer: 0, rightWingTimer: 0,
     grounded: true, perchedOn: null,
     glide: false, hopTimer: 0, hopAnimation: 0, peckAnimation: 0,
@@ -27,6 +40,12 @@ export function createWillieWagtail() {
     leftWingPose: 0, rightWingPose: 0,
     leftWingFold: 0, rightWingFold: 0,
     leftWingPulse: 0, rightWingPulse: 0,
+
+    leftStrokeStage: -1,
+    rightStrokeStage: -1,
+    
+    leftStrokeStartMs: null,
+    rightStrokeStartMs: null,
     leftHeld: false, rightHeld: false,
     bank: 0,
     rollRate: 0,
@@ -42,26 +61,117 @@ export function createWillieWagtail() {
 // These are game-feel approximations, not literal wingbeat aerodynamics.
 // Every fresh key press is a flap; held keys select different glide postures.
 export const WING_EFFECTS = Object.freeze({
-  raised:  { lift: 0.58, thrust: 0.20, brake: 1.0 },
-  middle:  { lift: 1.15, thrust: 0.45, brake: 0.05 },
-  lowered: { lift: 0.83, thrust: 1.22, brake: 0 }
+  // Recovery mainly brakes.
+  raised: {
+    lift: 0.12,
+    thrust: 0.03,
+    brake: 0.80
+  },
+
+  // Extension provides lift.
+  middle: {
+    lift: 0.55,
+    thrust: 0.20,
+    brake: 0.05
+  },
+
+  // Power stroke generates most of the propulsion.
+  lowered: {
+    lift: 1.25,
+    thrust: 1.35,
+    brake: 0
+  }
 });
 
-function applyWingEvent(bird, number) {
+
+function applyWingEvent(bird, event) {
+  // Support timestamped browser events and older numeric events.
+  const number =
+    typeof event === "number"
+      ? event
+      : event.number;
+
+  const atMs =
+    typeof event === "number"
+      ? null
+      : event.atMs;
+
   const match = WING_KEYS[number];
   if (!match) return;
+
   const [side, position] = match;
   const effect = WING_EFFECTS[position];
+
+  const stageKey = `${side}StrokeStage`;
+  const startKey = `${side}StrokeStartMs`;
+
+  const elapsed =
+    atMs === null || bird[startKey] === null
+      ? Infinity
+      : atMs - bird[startKey];
+
+  let power = 1;
+
+  // A complete wing cycle is:
+  // LEFT: 7 -> 4 -> 1
+  // RIGHT: 9 -> 6 -> 3
+
+  if (position === "raised") {
+    // Begin a new recovery-to-power sequence.
+    bird[stageKey] = 0;
+    bird[startKey] = atMs;
+
+  } else if (position === "middle") {
+    // Recognise the extension phase.
+    bird[stageKey] =
+      bird[stageKey] === 0 &&
+      elapsed >= 0 &&
+      elapsed <= STROKE_WINDOW_MS
+        ? 1
+        : -1;
+
+  } else {
+    // Recognise a completed power stroke.
+    if (
+      bird[stageKey] === 1 &&
+      elapsed >= 40 &&
+      elapsed <= STROKE_WINDOW_MS
+    ) {
+      // Faster player movement increases power.
+      // The multiplier is deliberately capped.
+      power = clamp(220 / elapsed, 1, 1.4);
+
+      bird.completedWingbeats++;
+    }
+
+    // Finish this stroke and reset the sequence.
+    bird[stageKey] = -1;
+    bird[startKey] = null;
+  }
+
+  bird.lastStrokePower = power;
+
+  // The requested wing pose changes immediately.
   bird[`${side}Wing`] = position;
   bird.lastWingEvent = `${side} ${position}`;
-  bird[`${side}WingTimer`] = 0.34;
+
+  // Fast animation, with no automatic additional strokes.
+  bird[`${side}WingTimer`] = WINGBEAT_SECONDS;
   bird[`${side}WingPulse`] = 1;
-  bird[`${side}LiftImpulse`] += effect.lift;
-  bird[`${side}ThrustImpulse`] += effect.thrust;
+
+  // Each primitive wing input contributes its own force.
+  // Only the completed power stroke receives the speed bonus.
+  bird[`${side}LiftImpulse`] += effect.lift * power;
+  bird[`${side}ThrustImpulse`] += effect.thrust * power;
   bird[`${side}BrakeImpulse`] += effect.brake;
+
   bird[`${side}FlapCount`] += 1;
-  bird[`${side}StrokePhase`] = position === 'raised' ? 0 : position === 'middle' ? 1 : 2;
+
+  bird[`${side}StrokePhase`] =
+    position === "raised" ? 0 :
+    position === "middle" ? 1 : 2;
 }
+
 
 
 function hopOnGround(bird, controls, dt) {
@@ -105,7 +215,9 @@ function hopOnGround(bird, controls, dt) {
 
 export function updateBird(bird, controls, dt) {
   bird.pitch = controls.pitch;
-  for (const number of controls.wingEvents.splice(0)) applyWingEvent(bird, number);
+  for (const event of controls.wingEvents.splice(0)) {
+    applyWingEvent(bird, event);
+  }
   
   // Holding a wing key maintains its posture.
   // Tapping produces a brief flap, then the wing folds.
@@ -132,7 +244,11 @@ export function updateBird(bird, controls, dt) {
     const position =
       heldEntries.find(([, pos]) => pos === current)?.[1]
       ?? heldEntries[0]?.[1]
-      ?? "rest";
+      ?? (
+        bird[`${side}WingPulse`] > 0
+          ? current
+          : "rest"
+      );
 
     const holding = heldEntries.length > 0;
 
@@ -144,7 +260,7 @@ export function updateBird(bird, controls, dt) {
     );
 
     bird[`${side}WingPulse`] = Math.max(
-      0, bird[`${side}WingPulse`] - dt / 0.25
+      0, bird[`${side}WingPulse`] - dt / WINGBEAT_SECONDS
     );
 
     // A short wingbeat continues after a tap.
@@ -159,7 +275,7 @@ export function updateBird(bird, controls, dt) {
 
     bird[`${side}WingFold`] +=
       (extensionTarget - bird[`${side}WingFold`]) *
-      (1 - Math.exp(-dt * (holding ? 24 : 19)));
+      (1 - Math.exp(-dt * (holding ? 55 : 52)));
 
     const poseTarget =
       position === "raised" ? -1 :
