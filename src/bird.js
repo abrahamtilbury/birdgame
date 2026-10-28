@@ -283,7 +283,7 @@ export function updateBird(bird, controls, dt) {
 
     bird[`${side}WingPose`] +=
       (poseTarget - bird[`${side}WingPose`]) *
-      (1 - Math.exp(-dt * 18));
+      (1 - Math.exp(-dt * 45));
   }
 
   const targetPitch = bird.pitch === 'forward' ? 1 : bird.pitch === 'backward' ? -1 : 0;
