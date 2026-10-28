@@ -176,3 +176,20 @@ body {
     [data-key="Numpad2"], [data-key="Numpad6"]
   ) .ground-label { display: inline; font-size: 22px; }
 }
+
+/* Prevent double-tap zoom during rapid wing flapping. */
+#game {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#gameCanvas,
+#keypad,
+#keypad kbd,
+#touchControls,
+#touchControls button {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
