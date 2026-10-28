@@ -30,6 +30,8 @@ export const input = {
   actions: [],
   lastInput: "none",
   inputCount: 0,
+  lastHoldMs: null,
+  lastWingGapMs: null,
   touchGroundMode: true
 };
 
@@ -42,6 +44,8 @@ export function initInput() {
   // Covers both keypad keys and HTML action buttons.
   const controls = document.querySelectorAll("[data-key]");
   const sourcesByCode = new Map();
+  const downAt = new Map();
+  const lastWingAt = new Map();
 
   function canonicalize(code) {
     const number = getNumber(code);
@@ -99,15 +103,37 @@ export function initInput() {
 
     if (!firstPress) return;
 
+    
+    const atMs = performance.now();
+    
+    downAt.set(canonical, atMs);
+    
     input.pressed.add(canonical);
     input.lastInput = canonical;
     input.inputCount++;
-
+    
     const number = getNumber(code);
-
+    
     if (wingNumbers.has(number)) {
-      input.wingEvents.push(number);
+      const side = [1, 4, 7].includes(number)
+        ? "left"
+        : "right";
+    
+      const previous = lastWingAt.get(side);
+    
+      input.lastWingGapMs =
+        previous === undefined
+          ? null
+          : atMs - previous;
+    
+      lastWingAt.set(side, atMs);
+    
+      input.wingEvents.push({
+        number,
+        atMs
+      });
     }
+
 
     if (pitchByNumber[number]) {
       input.pitch = pitchByNumber[number];
@@ -129,6 +155,13 @@ export function initInput() {
     if (!sources || !sources.delete(source)) return;
 
     if (sources.size === 0) {
+      const started = downAt.get(canonical);
+    
+      if (started !== undefined) {
+        input.lastHoldMs = performance.now() - started;
+      }
+    
+      downAt.delete(canonical);
       sourcesByCode.delete(canonical);
       input.pressed.delete(canonical);
     }
@@ -202,6 +235,8 @@ export function initInput() {
 
   function clearInput() {
     sourcesByCode.clear();
+    downAt.clear();
+    lastWingAt.clear();
     input.pressed.clear();
     input.wingEvents.length = 0;
     input.actions.length = 0;
