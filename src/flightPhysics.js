@@ -5,17 +5,15 @@
  // Coefficients are game-tuned, not measured Willie Wagtail values.
 
 export const FLIGHT = Object.freeze({
-  gravity: 4.5,
+  gravity: 9.8,
   impulsePerWing: 5.4,
   thrustPerWing: 17,
-
   maxRise: 14,
-  maxFall: 9,
+  maxFall: 22,
   maxSpeed: 165,
   maxAltitude: 40,
-
   horizontalDrag: 0.38,
-  verticalDrag: 0.15,
+  verticalDrag: 0.08,
   diveExchange: 2.8,
   glidingLift: 8,
   stallSpeed: 12,
@@ -29,6 +27,8 @@ export const FLIGHT = Object.freeze({
 
   // Bank-generated turning.
   lateralAcceleration: 160,
+  coordinatedStrokeWindow: 0.16,
+  singleWingLiftFraction: 0.06,
   lateralImpulsePerWing: 18,
   yawResponse: 11
 });
@@ -111,6 +111,51 @@ export function updateFlightPhysics(bird, dt, world) {
   // 5. Apply wingbeat forces.
   const asymmetry = leftLift - rightLift;
 
+ 
+  // Store the most recent lifting stroke from each wing.
+  // Inputs within 160 ms can form one coordinated lifting pair.
+  const now = world.time;
+
+  for (const side of ["left", "right"]) {
+    const credit = bird[`${side}LiftCredit`];
+
+    if (credit && credit.expires < now) {
+      bird[`${side}LiftCredit`] = null;
+    }
+  }
+
+  if (left > 0) {
+    bird.leftLiftCredit = {
+      amount: leftLift,
+      expires: now + FLIGHT.coordinatedStrokeWindow
+    };
+  }
+
+  if (right > 0) {
+    bird.rightLiftCredit = {
+      amount: rightLift,
+      expires: now + FLIGHT.coordinatedStrokeWindow
+    };
+  }
+
+  const coordinated =
+    !!bird.leftLiftCredit && !!bird.rightLiftCredit;
+
+  // A mismatched pair is limited by its weaker wing.
+  const balancedLift = coordinated
+    ? 2 * Math.min(
+        bird.leftLiftCredit.amount,
+        bird.rightLiftCredit.amount
+      )
+    : 0;
+
+  // Consume each paired stroke exactly once.
+  if (coordinated) {
+    bird.leftLiftCredit = null;
+    bird.rightLiftCredit = null;
+  }
+
+ 
   if (total > 0) {
     const liftMultiplier =
       bird.pitch === "backward" ? 1.12 :
@@ -126,8 +171,20 @@ export function updateFlightPhysics(bird, dt, world) {
       Math.cos(bird.bank)
     );
 
+    // A recovery-only pair cannot launch a grounded bird.
+    // An isolated airborne stroke contributes a little lift,
+    // but cannot sustain flight by itself.
+    const effectiveLift = coordinated
+      ? (bird.grounded && balancedLift < 0.75
+          ? 0
+          : balancedLift)
+      : (bird.grounded
+          ? 0
+          : (leftLift + rightLift) *
+            FLIGHT.singleWingLiftFraction);
+    
     bird.velocityZ +=
-      (leftLift + rightLift) *
+      effectiveLift *
       FLIGHT.impulsePerWing *
       liftMultiplier *
       verticalFactor;
@@ -170,7 +227,10 @@ export function updateFlightPhysics(bird, dt, world) {
     bird.rollRate +=
       asymmetry * FLIGHT.rollImpulse;
 
-    bird.grounded = false;
+    // Only a meaningful coordinated stroke launches the bird.
+    if (coordinated && effectiveLift > 0) {
+      bird.grounded = false;
+    }
   }
 
   // 6. Integrate rotational dynamics.
@@ -235,15 +295,27 @@ export function updateFlightPhysics(bird, dt, world) {
     1.25
   );
 
-  // 9. Redirect lift sideways through banking.
+  // 9. Sustained banked turning needs both wings extended.
+  // An isolated wing stroke still delivers its immediate
+  // lateral shove and roll impulse.
+  const supportedSpan = clamp(
+    Math.min(
+      bird.leftWingFold || 0,
+      bird.rightWingFold || 0
+    ),
+    0, 1
+  );
+  
   const bankedSideAcceleration =
     FLIGHT.lateralAcceleration *
     Math.sin(bird.bank) *
-    Math.min(1, airflowFactor);
+    Math.min(1, airflowFactor) *
+    supportedSpan;
 
   const tailSideAcceleration =
-    8 * bird.tailTwist *
-    Math.min(1, airflowFactor);
+   8 * bird.tailTwist *
+   Math.min(1, airflowFactor) *
+   supportedSpan;
 
   const sideAcceleration =
     bankedSideAcceleration + tailSideAcceleration;
@@ -343,10 +415,12 @@ export function updateFlightPhysics(bird, dt, world) {
         liftLimit,
         FLIGHT.glidingLift *
         glideFraction *
-        modeLift *
-        pitchLift
-      ) * Math.cos(bird.bank)
-    : 0;
+         modeLift *
+         pitchLift
+        ) *
+        supportedSpan *
+        Math.max(0, Math.cos(bird.bank))
+      : 0;
 
   const divePenalty =
     bird.pitch === "forward" ? 2.2 : 0;
