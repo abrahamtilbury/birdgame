@@ -29,6 +29,7 @@ export const FLIGHT = Object.freeze({
 
   // Bank-generated turning.
   lateralAcceleration: 160,
+  lateralImpulsePerWing: 18,
   yawResponse: 11
 });
 
@@ -138,6 +139,19 @@ export function updateFlightPhysics(bird, dt, world) {
 
     bird.velocityX += forwardX * thrust;
     bird.velocityY += forwardY * thrust;
+
+   
+    // Immediate asymmetric wing force.
+    // Left flap pushes the bird right.
+    // Right flap pushes the bird left.
+    // Balanced flaps cancel the sideways impulse.
+    const lateralKick =
+      asymmetry * FLIGHT.lateralImpulsePerWing;
+
+    bird.velocityX += rightX * lateralKick;
+    bird.velocityY += rightY * lateralKick;
+
+   
     // Braking is relative to the moving air mass.
     const brakeFactor = Math.max(
       0.55,
