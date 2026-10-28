@@ -74,13 +74,6 @@ function update(dt) {
   world.time += dt;
   updateBird(bird, input, dt);
   const actions = input.actions.splice(0);
-  // Temporary diagnostic: T is a full two-wing downstroke through real physics.
-  // If T lifts the bird but numpad does not, the problem is wing input, not lift.
-  if (actions.includes("KeyT")) {
-    bird.leftFlapCount += 1;
-    bird.rightFlapCount += 1;
-    setBirdMessage(bird, "TEST FLAP: two wings fired", 1.5);
-  }
   updateFlightPhysics(bird, dt, world);
   resolveCollisions(bird, world, previous);
 
