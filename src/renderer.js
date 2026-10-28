@@ -262,7 +262,10 @@ function drawWing(ctx, side, state, bird) {
   }
 
   // Articulated shoulder, elbow and wrist.
-  const beat = Math.sin(pulse * Math.PI);
+  // Full up/down movement during one short commanded stroke.
+  const beat = Math.sin(
+    (1 - pulse) * Math.PI * 2
+  );
   const bankOffset = (bird.bank || 0) * side * 7;
 
   const shoulder = {
@@ -456,7 +459,7 @@ function drawHud(ctx, bird, world, controls) {
     `Speed ${speed.toFixed(0)} px/s | Heading ${(bird.heading * 180 / Math.PI).toFixed(0)}°`,
     `Pitch ${bird.pitch} | ${bird.flightMode} | Bank ${Math.round((bird.bank || 0) * 180 / Math.PI)} deg`,
     `Wing L ${bird.leftWing} / R ${bird.rightWing}`,
-    `FLAPS ${bird.totalFlaps || 0}  | AIRSPEED ${(bird.airspeed || 0).toFixed(0)}`,
+    `WING INPUTS ${bird.totalFlaps || 0} | CYCLES ${bird.completedWingbeats || 0} | AIR ${(bird.airspeed || 0).toFixed(0)}`,
     `Last key: ${controls?.lastInput || "none"} | Wing ${bird.lastWingEvent}`,
     `Position ${bird.x.toFixed(0)}, ${bird.y.toFixed(0)}`,
     bird.perchedOn ? `PERCHED ${bird.perchedOn.branchId}` : bird.grounded ? "GROUND: WASD to hop" : "FLYING: hold 4+6 to glide",
