@@ -54,7 +54,9 @@ export function updateFlightPhysics(bird, dt, world) {
 
   const leftThrust = bird.leftThrustImpulse || left;
   const rightThrust = bird.rightThrustImpulse || right;
-
+  const brakeImpulse =
+   (bird.leftBrakeImpulse || 0) +
+   (bird.rightBrakeImpulse || 0);
   bird.leftLiftImpulse = 0;
   bird.rightLiftImpulse = 0;
   bird.leftThrustImpulse = 0;
@@ -136,6 +138,17 @@ export function updateFlightPhysics(bird, dt, world) {
 
     bird.velocityX += forwardX * thrust;
     bird.velocityY += forwardY * thrust;
+    // Braking is relative to the moving air mass.
+    const brakeFactor = Math.max(
+      0.55,
+      1 - brakeImpulse * 0.18
+    );
+    
+    bird.velocityX =
+      wind.x + (bird.velocityX - wind.x) * brakeFactor;
+    
+    bird.velocityY =
+      wind.y + (bird.velocityY - wind.y) * brakeFactor;
 
     // Unequal wing forces change roll RATE.
     // Right-only -> left bank.
