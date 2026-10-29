@@ -38,7 +38,29 @@
         <button type="button" class="touch-key action-key" data-key="KeyX">X <small>Drop Item</small></button>
       </div>
     </section>
-    <p class="controls">WASD hop · Space peck / grab branch · N build nest · X drop item · 7+9 flare flap · 4+6 lifting flap / glide · 1+3 thrust flap · 8 dive · 5 level · 2 flare</p>
+    <button id="birdsongToggle" type="button" class="birdsong-toggle" aria-pressed="false">🔇 Bird calls: Off</button>
+    <div id="familyMilestone" class="milestone-overlay" role="dialog" aria-modal="true"
+      aria-labelledby="familyTitle" hidden>
+      <div class="milestone-panel">
+        <div class="milestone-eyebrow">A NEW CHAPTER · FAMILY MILESTONE</div>
+        <div class="milestone-content">
+          <div class="milestone-photo-frame">
+            <img id="familyPhoto" src="./assets/images/wagtail-family-milestone.webp"
+              alt="Real photograph of a Willie Wagtail" />
+            <div id="familyPhotoFallback" hidden>WILLIE WAGTAIL</div>
+          </div>
+          <div class="milestone-message">
+            <h2 id="familyTitle">Your bird started a family!</h2>
+            <p>New life stirs among the eucalyptus branches.</p>
+          </div>
+        </div>
+        <div class="milestone-dialogue">
+          <p>Two little eggs have appeared in your nest.</p>
+          <button id="familyContinue" type="button">Continue ▾</button>
+        </div>
+      </div>
+    </div>
+    <p class="controls">WASD hop · Space peck / grip / place / drop · N build nest · X drop item · 7+9 flare flap · 4+6 lifting flap / glide · 1+3 thrust flap · 8 dive · 5 level · 2 flare</p>
   </main>
   <script type="module" src="./src/main.js"></script>
 </body>

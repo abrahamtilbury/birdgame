@@ -70,7 +70,7 @@ body {
 #keypad kbd.pressed { background: #C49A43; color: #111; }
 
 /* The displayed numpad is a playable touch/mouse alternative. */
-#keypad kbd { cursor: pointer; touch-action: manipulation; }
+#keypad kbd { cursor: pointer; touch-action: none; }
 #keypad kbd:focus-visible { outline: 3px solid #fff3bd; outline-offset: 2px; }
 
 /* iPhone/touch controls. Hide the extra pad on large keyboard-driven screens. */
@@ -90,7 +90,7 @@ body {
   color: #fff;
   font: 700 16px/1 system-ui, sans-serif;
   cursor: pointer;
-  touch-action: manipulation;
+  touch-action: none;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
@@ -177,21 +177,58 @@ body {
   ) .ground-label { display: inline; font-size: 22px; }
 }
 
-/* Fast gameplay taps without disabling pinch-to-zoom. */
-#game,
+/* Prevent double-tap zoom during rapid wing flapping. */
+#game {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
 #gameCanvas,
 #keypad,
 #keypad kbd,
 #touchControls,
 #touchControls button {
-  touch-action: manipulation;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Don't select text when repeatedly pressing game keys. */
-#keypad kbd,
-#touchControls button {
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-touch-callout: none;
+/* v0.12.1 living-bushland controls and one-time family milestone. */
+.birdsong-toggle {
+  min-height: 44px; padding: 8px 16px; border-radius: 8px;
+  border: 1px solid #5d755d; background: #233c2c;
+  color: #fff6dd; cursor: pointer; font: 600 13px system-ui,sans-serif;
 }
+.birdsong-toggle:disabled { opacity: .65; }
+.milestone-overlay[hidden] { display: none; }
+.milestone-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  display: grid; place-items: center; padding: 16px;
+  background: rgba(13,25,18,.77); box-sizing: border-box;
+}
+.milestone-panel {
+  width: min(560px,100%); max-height: 94dvh; overflow-y: auto;
+  border: 3px solid #e6d4a1; border-radius: 12px;
+  background: #3e5846; color: #fff5de; padding: 16px;
+  box-shadow: 0 10px 42px rgba(0,0,0,.4); box-sizing: border-box;
+}
+.milestone-eyebrow { font: 700 11px monospace; letter-spacing: 1px; margin-bottom: 10px; }
+.milestone-content { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 16px; align-items: center; }
+.milestone-photo-frame { min-width: 0; background: #233d2c; border: 3px solid #d9c18b; border-radius: 7px; overflow: hidden; }
+.milestone-photo-frame img { display: block; width: 100%; max-height: 38dvh; object-fit: contain; }
+#familyPhotoFallback { padding: 32px 10px; font: 700 13px monospace; text-align: center; }
+.milestone-message h2 { font: 800 clamp(18px, 4.5vw, 27px)/1.13 system-ui,sans-serif; margin: 0 0 12px; }
+.milestone-message p { line-height: 1.45; margin: 0; }
+.milestone-dialogue { background: #f4efd9; color: #223827; padding: 12px; margin-top: 14px; border-radius: 6px; font: 600 14px system-ui,sans-serif; }
+.milestone-dialogue p { margin: 0 0 12px; }
+.milestone-dialogue button { display: block; margin-left: auto; padding: 10px 14px; background: #284332; color: white; border: 0; border-radius: 5px; cursor: pointer; }
+@media (max-width: 420px) {
+  .milestone-content { gap: 10px; }
+  .milestone-panel { padding: 11px; }
+  .milestone-message p { font-size: 12px; }
+}
+
+/* Preserve deliberate pinch zoom on the game canvas, not touch buttons. */
+#gameCanvas { touch-action: manipulation; }
+.milestone-photo-frame [hidden] { display: none; }
