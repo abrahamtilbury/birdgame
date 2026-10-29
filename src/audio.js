@@ -1,6 +1,6 @@
 // Optional authentic Willie Wagtail recording; never auto-play on load.
-// Asset must actually exist at /audio/wagtail-contact.mp3.
-const CALL_PATH = './audio/wagtail-contact.mp3';
+// Permanent asset: assets/audio/wagtail-contact.mp3.
+const CALL_PATH = './assets/audio/wagtail-contact.mp3';
 
 export function createBirdsong(toggleButton) {
   const call = new Audio(CALL_PATH);
@@ -11,7 +11,6 @@ export function createBirdsong(toggleButton) {
   let problem = '';
   let elapsed = 0;
   let nextCall = 20 + Math.random() * 25;
-  let localAudioURL = null;
   let activePath = CALL_PATH;
 
   function paint() {
@@ -41,7 +40,7 @@ export function createBirdsong(toggleButton) {
     try {
       // Retry the real file after a 404, rather than permanently disabling audio.
       if (call.error) {
-        call.src = localAudioURL || `${CALL_PATH}?retry=${Date.now()}`;
+        call.src = `${CALL_PATH}?retry=${Date.now()}`;
         call.load();
       }
       call.currentTime = 0;
@@ -63,21 +62,6 @@ export function createBirdsong(toggleButton) {
   });
   paint();
   return {
-    // Temporary local-file preview: copy the audio into /audio for
-    // permanent use. The user must still tap Bird calls: Off to play it.
-    setFile(file) {
-      if (!file || !(file.type.startsWith('audio/') || /\.(mp3|m4a|wav|ogg)$/i.test(file.name))) return false;
-      enabled = false;
-      call.pause();
-      if (localAudioURL) URL.revokeObjectURL(localAudioURL);
-      localAudioURL = URL.createObjectURL(file);
-      activePath = file.name;
-      call.src = localAudioURL;
-      call.load();
-      problem = '';
-      paint();
-      return true;
-    },
     status() { return { enabled, problem, path: activePath }; },
     update(dt, world) {
       if (!enabled || document.hidden) return;

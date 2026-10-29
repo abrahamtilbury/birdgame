@@ -21,7 +21,7 @@ export const FLIGHT = Object.freeze({
   rollDamping: 9.5,
   heldRollTorque: 17,
   maxBank: 0.85,
-  maxTurnRate: 3.0, // rad/s: agile asymmetric wing steering
+  maxTurnRate: 1.75, // rad/s: agile but controllable turns (about 100 deg/s)
   lateralAcceleration: 185,
   coordinatedStrokeWindow: 0.16,
   lateralImpulsePerWing: 18,
@@ -209,14 +209,15 @@ export function updateFlightPhysics(bird, dt, world) {
     bird.velocityY = wind.y + (bird.velocityY - wind.y) * brakeFactor;
   }
 
-  // 6. Held asymmetry gives an immediate, predictable steering command.
-  // Roll is the body pose; yaw curves the velocity vector (step 7).
-  // They are separate states, but are coordinated by the same command.
+  // 6. Holding one deployed wing banks for a sustained turn.
+  // A brief left/right primitive stroke also STEERS when both 4+6
+  // glide keys are held: the stroke command should not cancel against
+  // the temporary reduction in that wing's effective lift area.
   const heldAsymmetry = leftArea - rightArea;
   const turnCommand = (wasGrounded || wasPerched) ? 0 : clamp(
-    heldAsymmetry * 1.8 + (bird.turnPulse || 0) * 1.4, -1, 1
+    heldAsymmetry * 0.95 + (bird.turnPulse || 0) * 1.35, -1, 1
   );
-  bird.turnPulse = (bird.turnPulse || 0) * Math.exp(-4.5 * dt);
+  bird.turnPulse = (bird.turnPulse || 0) * Math.exp(-2.0 * dt);
   const previousBank = bird.bank;
   const desiredBank = FLIGHT.maxBank * turnCommand * controlAuthority;
   bird.bank = ease(bird.bank, desiredBank, dt, 10);

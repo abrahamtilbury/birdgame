@@ -25,13 +25,6 @@ const familyMilestone = createFamilyMilestone(document.getElementById('familyMil
 document.getElementById('milestonePreview').addEventListener('click', () => {
   familyMilestone.preview();
 });
-const audioPicker = document.getElementById('birdCallFile');
-document.getElementById('birdCallLoad').addEventListener('click', () => audioPicker.click());
-audioPicker.addEventListener('change', () => {
-  if (birdsong.setFile(audioPicker.files?.[0])) {
-    setBirdMessage(bird, 'Bird call selected. Tap Bird calls: Off to listen.', 5);
-  }
-});
 
 const nestStatusEl = document.getElementById('nestStatus');
 function updateNestStatus() {
@@ -65,7 +58,7 @@ syncTouchMode();
 
 // Read-only browser Console snapshot for diagnosing real keyboard behaviour.
 window.birdFlightDebug = () => ({
-  version: '0.12.3',
+  version: '0.12.4',
   altitude: Number(bird.altitude.toFixed(3)),
   verticalSpeed: Number(bird.velocityZ.toFixed(3)),
   flaps: bird.totalFlaps,

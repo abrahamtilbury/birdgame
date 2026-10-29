@@ -17,6 +17,11 @@ export function createFamilyMilestone(overlay) {
     photo.hidden = false;
     fallback.hidden = true;
   });
+  // A cached/missing image may finish before listeners are attached.
+  if (photo.complete) {
+    photo.hidden = photo.naturalWidth === 0;
+    fallback.hidden = photo.naturalWidth !== 0;
+  }
   function dismiss() {
     open = false;
     overlay.hidden = true;
