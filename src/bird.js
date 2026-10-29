@@ -21,6 +21,9 @@ export function createWillieWagtail() {
     leftWing: "rest", rightWing: "rest",
     leftStrokePhase: 0, rightStrokePhase: 0,
     leftFlapCount: 0, rightFlapCount: 0,
+    powerStrokeEvents: [], // Timestamped 1/3 downstrokes for coordination.
+    pendingPowerStrokes: { left: null, right: null },
+    pairedStrokes: 0,
     totalFlaps: 0,
     completedWingbeats: 0,
     lastStrokePower: 1,
@@ -165,6 +168,17 @@ function applyWingEvent(bird, event) {
   bird[`${side}ThrustImpulse`] += effect.thrust * power;
   bird[`${side}BrakeImpulse`] += effect.brake;
 
+  // Preserve the original downstroke event. Do not infer it later from
+  // bird.leftWing/rightWing: several stage inputs can arrive in one tick.
+  if (position === "lowered") {
+    bird.powerStrokeEvents.push({
+      side,
+      atMs,
+      lift: effect.lift * power,
+      thrust: effect.thrust * power
+    });
+  }
+
   bird[`${side}FlapCount`] += 1;
 
   bird[`${side}StrokePhase`] =
@@ -289,7 +303,7 @@ export function updateBird(bird, controls, dt) {
   const targetPitch = bird.pitch === 'forward' ? 1 : bird.pitch === 'backward' ? -1 : 0;
   bird.pitchVisual += (targetPitch - bird.pitchVisual) * (1 - Math.exp(-dt * 10));
   // A held matching pair selects flight mode. Tapping any key is still a flap.
-  bird.glide = bird.leftHeld && bird.rightHeld;
+  bird.glide = controls.pressed.has('Numpad4') && controls.pressed.has('Numpad6');
   bird.flightMode = controls.pressed.has('Numpad4') && controls.pressed.has('Numpad6') ? 'glide' :
     controls.pressed.has('Numpad7') && controls.pressed.has('Numpad9') ? 'flare' :
     controls.pressed.has('Numpad1') && controls.pressed.has('Numpad3') ? 'fast-glide' :

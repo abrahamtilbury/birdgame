@@ -1,487 +1,332 @@
-
- // Bird Flight v0.9: research-informed 2.5D flight physics.
- // Horizontal positions and speeds use pixels and pixels/s.
- // Altitude and vertical speed use gameplay metres and m/s.
- // Coefficients are game-tuned, not measured Willie Wagtail values.
+// Bird Flight v0.12 — deterministic, manual-wing flight model.
+// Horizontal coordinates/velocities: game pixels and pixels/s.
+// Altitude and vertical velocity: gameplay metres and metres/s.
+// All coefficients are game-tuned; this is not a calibrated CFD model.
 
 export const FLIGHT = Object.freeze({
   gravity: 9.8,
-  impulsePerWing: 5.4,
+  impulsePerWing: 2.6,
   thrustPerWing: 17,
   maxRise: 14,
   maxFall: 22,
   maxSpeed: 165,
   maxAltitude: 40,
-  horizontalDrag: 0.38,
+  horizontalDrag: 0.28,
   verticalDrag: 0.08,
   diveExchange: 2.8,
   glidingLift: 8,
-  stallSpeed: 12,
-
-  // Rotational dynamics.
+  stallSpeed: 28,
   rollImpulse: 3.8,
-  rollRestoring: 14.0,
+  rollRestoring: 14,
   rollDamping: 7.5,
-  heldRollTorque: 5.0,
+  heldRollTorque: 5,
   maxBank: 1.02,
-
-  // Bank-generated turning.
   lateralAcceleration: 160,
   coordinatedStrokeWindow: 0.16,
-  singleWingLiftFraction: 0.06,
   lateralImpulsePerWing: 18,
   yawResponse: 11
 });
 
-const clamp = (n, low, high) =>
-  Math.max(low, Math.min(high, n));
+const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+const ease = (value, target, dt, rate) =>
+  value + (target - value) * (1 - Math.exp(-rate * dt));
 
-const ease = (current, target, dt, rate) =>
-  current + (target - current) * (1 - Math.exp(-rate * dt));
+// WingFold is extension, NOT the same thing as aerodynamic surface area.
+// At a fixed span, the actual stage changes the useful lifting surface.
+const POSE_AREA = Object.freeze({
+  rest: 0,
+  raised: 0.45,
+  middle: 1,
+  lowered: 0.35
+});
+
+function wingArea(bird, side) {
+  return clamp(bird[`${side}WingFold`] || 0, 0, 1) *
+    (POSE_AREA[bird[`${side}Wing`]] ?? 0);
+}
+
+// Only *lowered* inputs are powered strokes. Events come directly from
+// bird.js with their original performance.now() timestamps. A pending
+// stroke may be paired ONCE with an opposite-side stroke within 160 ms.
+function consumePowerStrokes(bird, world) {
+  const pending = bird.pendingPowerStrokes ??= { left: null, right: null };
+  const events = bird.powerStrokeEvents?.splice(0) ?? [];
+  let pairedLift = 0;
+  let pairedThrust = 0;
+  let pairs = 0;
+
+  for (const event of events) {
+    const side = event.side;
+    if (side !== 'left' && side !== 'right') continue;
+    const opposite = side === 'left' ? 'right' : 'left';
+    const time = Number.isFinite(event.atMs)
+      ? event.atMs
+      : world.time * 1000;
+    const other = pending[opposite];
+
+    if (other && time >= other.atMs &&
+        time - other.atMs <= FLIGHT.coordinatedStrokeWindow * 1000) {
+      pairedLift += 2 * Math.min(event.lift, other.lift);
+      pairedThrust += event.thrust + other.thrust;
+      pairs++;
+      pending[opposite] = null;
+      pending[side] = null;
+    } else {
+      // Same-side strokes replace older ones; no old credit can be reused.
+      pending[side] = { ...event, atMs: time };
+      if (pending[opposite] &&
+          time - pending[opposite].atMs > FLIGHT.coordinatedStrokeWindow * 1000) {
+        pending[opposite] = null;
+      }
+    }
+  }
+
+  return { pairedLift, pairedThrust, pairs };
+}
 
 export function updateFlightPhysics(bird, dt, world) {
-
-  // 1. Collect and consume wing impulses.
+  // 1. Consume one-off impulses once per physics tick.
   const left = bird.leftFlapCount || 0;
   const right = bird.rightFlapCount || 0;
-
-  bird.leftFlapCount = 0;
-  bird.rightFlapCount = 0;
-
   const total = left + right;
-
-  const leftLift = bird.leftLiftImpulse || left;
-  const rightLift = bird.rightLiftImpulse || right;
-
-  const leftThrust = bird.leftThrustImpulse || left;
-  const rightThrust = bird.rightThrustImpulse || right;
+  const leftLift = bird.leftLiftImpulse || 0;
+  const rightLift = bird.rightLiftImpulse || 0;
+  const leftThrust = bird.leftThrustImpulse || 0;
+  const rightThrust = bird.rightThrustImpulse || 0;
   const brakeImpulse =
-   (bird.leftBrakeImpulse || 0) +
-   (bird.rightBrakeImpulse || 0);
-  bird.leftLiftImpulse = 0;
-  bird.rightLiftImpulse = 0;
-  bird.leftThrustImpulse = 0;
-  bird.rightThrustImpulse = 0;
-  bird.leftBrakeImpulse = 0;
-  bird.rightBrakeImpulse = 0;
+    (bird.leftBrakeImpulse || 0) + (bird.rightBrakeImpulse || 0);
+
+  bird.leftFlapCount = bird.rightFlapCount = 0;
+  bird.leftLiftImpulse = bird.rightLiftImpulse = 0;
+  bird.leftThrustImpulse = bird.rightThrustImpulse = 0;
+  bird.leftBrakeImpulse = bird.rightBrakeImpulse = 0;
+
+  const pair = consumePowerStrokes(bird, world);
+  bird.pairedStrokes = (bird.pairedStrokes || 0) + pair.pairs;
 
   if (total > 0) {
     bird.totalFlaps = (bird.totalFlaps || 0) + total;
     bird.flapFeedbackTimer = 0.45;
   }
 
-  // 2. Keep the bird stationary vertically while grounded.
-  if (bird.grounded && !bird.perchedOn && !total) {
+  // 2. An unpaired stroke cannot launch the bird, even if tapped repeatedly.
+  // Let event timestamps survive grounded ticks for staggered 1+3 takeoff.
+  if (bird.grounded && !bird.perchedOn && pair.pairs === 0) {
     bird.altitude = 0;
-    bird.velocityX = 0;
-    bird.velocityY = 0;
-    bird.velocityZ = 0;
-
-    bird.rollRate = 0;
-    bird.yawRate = 0;
-    bird.bank = 0;
-    bird.roll = 0;
-
+    bird.velocityX = bird.velocityY = bird.velocityZ = 0;
+    bird.rollRate = bird.yawRate = bird.bank = bird.roll = 0;
+    bird.aeroSpan = bird.aeroLift = 0;
+    bird.aeroState = 'GROUND';
     bird.x = clamp(bird.x, 12, world.width - 12);
     bird.y = clamp(bird.y, 12, world.height - 12);
     return;
   }
 
-  // 3. Initialise any new dynamic state safely.
+  if (bird.perchedOn && pair.pairs === 0) {
+    // A perched bird must not fall or drift just because wind exists.
+    bird.velocityX = bird.velocityY = bird.velocityZ = 0;
+    bird.aeroLift = 0;
+    return;
+  }
+
   bird.rollRate ??= 0;
   bird.yawRate ??= 0;
   bird.bank ??= 0;
   bird.tailSpread ??= 0.35;
   bird.tailTwist ??= 0;
+  const wasGrounded = bird.grounded;
+  const wasPerched = !!bird.perchedOn;
 
-  // Heading zero means facing north (negative world Y).
   const forwardX = Math.sin(bird.heading);
   const forwardY = -Math.cos(bird.heading);
-
   const rightX = Math.cos(bird.heading);
   const rightY = Math.sin(bird.heading);
+  const wind = world.windAt?.(bird.x, bird.y, bird.altitude) ??
+    { x: 0, y: 0, up: 0 };
 
-  // 4. Sample the three-dimensional wind field.
-  const wind = world.windAt?.(
-    bird.x,
-    bird.y,
-    bird.altitude
-  ) ?? { x: 0, y: 0, up: 0 };
+  // 3. Aerodynamic wing geometry, separate from the powered stroke impulse.
+  const leftArea = wingArea(bird, 'left');
+  const rightArea = wingArea(bird, 'right');
+  const averageArea = (leftArea + rightArea) / 2;
+  const glideSpan = Math.min(leftArea, rightArea);
+  const turningSpan = Math.sqrt(averageArea);
+  const relativeX = bird.velocityX - wind.x;
+  const relativeY = bird.velocityY - wind.y;
+  const preAirspeed = Math.hypot(relativeX, relativeY);
+  const controlAuthority = clamp(
+    (preAirspeed - FLIGHT.stallSpeed * 0.5) / 45, 0, 1
+  );
 
-  // 5. Apply wingbeat forces.
-  const asymmetry = leftLift - rightLift;
-
- 
-  // Store the most recent lifting stroke from each wing.
-  // Inputs within 160 ms can form one coordinated lifting pair.
-  const now = world.time;
-
-  for (const side of ["left", "right"]) {
-    const credit = bird[`${side}LiftCredit`];
-
-    if (credit && credit.expires < now) {
-      bird[`${side}LiftCredit`] = null;
-    }
-  }
-
-  if (left > 0) {
-    bird.leftLiftCredit = {
-      amount: leftLift,
-      expires: now + FLIGHT.coordinatedStrokeWindow
-    };
-  }
-
-  if (right > 0) {
-    bird.rightLiftCredit = {
-      amount: rightLift,
-      expires: now + FLIGHT.coordinatedStrokeWindow
-    };
-  }
-
-  const coordinated =
-    !!bird.leftLiftCredit && !!bird.rightLiftCredit;
-
-  // A mismatched pair is limited by its weaker wing.
-  const balancedLift = coordinated
-    ? 2 * Math.min(
-        bird.leftLiftCredit.amount,
-        bird.rightLiftCredit.amount
-      )
-    : 0;
-
-  // Consume each paired stroke exactly once.
-  if (coordinated) {
-    bird.leftLiftCredit = null;
-    bird.rightLiftCredit = null;
-  }
-
- 
-  if (total > 0) {
+  // 4. Coordinated powered downstroke creates vertical lift.
+  // One-wing strokes have zero *powered vertical* lift, but still shove/roll.
+  if (pair.pairs > 0) {
     const liftMultiplier =
-      bird.pitch === "backward" ? 1.12 :
-      bird.pitch === "forward" ? 0.83 : 1;
+      bird.pitch === 'backward' ? 1.12 :
+      bird.pitch === 'forward' ? 0.83 : 1;
+    const verticalFactor = Math.max(0.68, Math.cos(bird.bank));
+    bird.velocityZ += pair.pairedLift * FLIGHT.impulsePerWing *
+      liftMultiplier * verticalFactor;
+    bird.grounded = false;
+  }
 
-    const thrustMultiplier =
-      bird.pitch === "forward" ? 1.26 :
-      bird.pitch === "backward" ? 0.62 : 1;
-
-    // Banking reduces the vertical component of a flap.
-    const verticalFactor = Math.max(
-      0.68,
-      Math.cos(bird.bank)
-    );
-
-    // A recovery-only pair cannot launch a grounded bird.
-    // An isolated airborne stroke contributes a little lift,
-    // but cannot sustain flight by itself.
-    const effectiveLift = coordinated
-      ? (bird.grounded && balancedLift < 0.75
-          ? 0
-          : balancedLift)
-      : (bird.grounded
-          ? 0
-          : (leftLift + rightLift) *
-            FLIGHT.singleWingLiftFraction);
-    
-    bird.velocityZ +=
-      effectiveLift *
-      FLIGHT.impulsePerWing *
-      liftMultiplier *
-      verticalFactor;
-
-    const thrust =
-      (leftThrust + rightThrust) *
-      FLIGHT.thrustPerWing *
-      thrustMultiplier;
-
+  // 5. Airborne primitive events provide thrust, lateral shove and roll.
+  // Takeoff instead uses BOTH halves of the coordinated stroke, so a
+  // staggered 1-then-3 takeoff won't receive a spurious sideways kick.
+  const thrustMultiplier =
+    bird.pitch === 'forward' ? 1.26 :
+    bird.pitch === 'backward' ? 0.62 : 1;
+  if (wasGrounded || wasPerched) {
+    if (pair.pairs > 0) {
+      const thrust = pair.pairedThrust * FLIGHT.thrustPerWing * thrustMultiplier;
+      bird.velocityX += forwardX * thrust;
+      bird.velocityY += forwardY * thrust;
+    }
+  } else if (total > 0) {
+    const thrust = (leftThrust + rightThrust) *
+      FLIGHT.thrustPerWing * thrustMultiplier;
     bird.velocityX += forwardX * thrust;
     bird.velocityY += forwardY * thrust;
-
-   
-    // Immediate asymmetric wing force.
-    // Left flap pushes the bird right.
-    // Right flap pushes the bird left.
-    // Balanced flaps cancel the sideways impulse.
-    const lateralKick =
-      asymmetry * FLIGHT.lateralImpulsePerWing;
-
-    bird.velocityX += rightX * lateralKick;
-    bird.velocityY += rightY * lateralKick;
-
-   
-    // Braking is relative to the moving air mass.
-    const brakeFactor = Math.max(
-      0.55,
-      1 - brakeImpulse * 0.18
-    );
-    
-    bird.velocityX =
-      wind.x + (bird.velocityX - wind.x) * brakeFactor;
-    
-    bird.velocityY =
-      wind.y + (bird.velocityY - wind.y) * brakeFactor;
-
-    // Unequal wing forces change roll RATE.
-    // Right-only -> left bank.
-    // Left-only -> right bank.
-    bird.rollRate +=
-      asymmetry * FLIGHT.rollImpulse;
-
-    // Only a meaningful coordinated stroke launches the bird.
-    if (coordinated && effectiveLift > 0) {
-      bird.grounded = false;
-    }
+    // Design mapping: left wing -> right shove, right wing -> left shove.
+    const asymmetry = leftLift - rightLift;
+    const sideways = asymmetry * FLIGHT.lateralImpulsePerWing;
+    bird.velocityX += rightX * sideways;
+    bird.velocityY += rightY * sideways;
+    bird.rollRate += asymmetry * FLIGHT.rollImpulse;
   }
 
-  // 6. Integrate rotational dynamics.
-  const heldAsymmetry =
-    Number(!!bird.leftHeld) -
-    Number(!!bird.rightHeld);
+  if (total > 0) {
+    // Braking relative to the air mass; mostly the up/recovery stage.
+    const brakeFactor = Math.max(0.55, 1 - brakeImpulse * 0.18);
+    bird.velocityX = wind.x + (bird.velocityX - wind.x) * brakeFactor;
+    bird.velocityY = wind.y + (bird.velocityY - wind.y) * brakeFactor;
+  }
 
+  // 6. Roll, bank and heading are distinct physical/gameplay states.
+  const heldAsymmetry = leftArea - rightArea;
   const rollAcceleration =
     -FLIGHT.rollRestoring * bird.bank -
     FLIGHT.rollDamping * bird.rollRate +
-    heldAsymmetry * FLIGHT.heldRollTorque;
-
+    heldAsymmetry * FLIGHT.heldRollTorque * controlAuthority;
   bird.rollRate += rollAcceleration * dt;
-
   bird.bank = clamp(
-    bird.bank + bird.rollRate * dt,
-    -FLIGHT.maxBank,
-    FLIGHT.maxBank
+    bird.bank + bird.rollRate * dt, -FLIGHT.maxBank, FLIGHT.maxBank
   );
-
-  // Prevent angular momentum accumulating against the limit.
-  if (
-    Math.abs(bird.bank) >= FLIGHT.maxBank &&
-    bird.rollRate * bird.bank > 0
-  ) {
-    bird.rollRate = 0;
-  }
-
+  if (Math.abs(bird.bank) >= FLIGHT.maxBank &&
+      bird.rollRate * bird.bank > 0) bird.rollRate = 0;
   bird.roll = bird.bank;
 
-  // 7. Tail spread and automatic tail coordination.
   const spreadTarget =
-    bird.pitch === "backward" ||
-    bird.flightMode === "flare" ? 1 :
-    bird.pitch === "forward" ? 0.20 :
-    bird.glide ? 0.52 : 0.35;
-
-  bird.tailSpread = ease(
-    bird.tailSpread,
-    spreadTarget,
-    dt,
-    7
-  );
-
+    bird.pitch === 'backward' || bird.flightMode === 'flare' ? 1 :
+    bird.pitch === 'forward' ? 0.20 :
+    glideSpan > 0.65 ? 0.52 : 0.35;
+  bird.tailSpread = ease(bird.tailSpread, spreadTarget, dt, 7);
   bird.tailTwist = ease(
-    bird.tailTwist,
-    clamp(bird.bank * 0.55, -0.60, 0.60),
-    dt,
-    9
+    bird.tailTwist, clamp(bird.bank * 0.55, -0.6, 0.6), dt, 9
   );
 
-  // 8. Determine airspeed relative to wind.
+  // 7. Banked lift generates sideways *acceleration* at useful airspeed;
+  // yaw follows the resulting curved velocity, rather than flap input itself.
   let airX = bird.velocityX - wind.x;
   let airY = bird.velocityY - wind.y;
-
-  const airspeed = Math.hypot(airX, airY);
-  bird.airspeed = airspeed;
-
-  const airflowFactor = clamp(
-    airspeed / 68,
-    0,
-    1.25
-  );
-
-  // 9. Sustained banked turning needs both wings extended.
-  // An isolated wing stroke still delivers its immediate
-  // lateral shove and roll impulse.
-  const supportedSpan = clamp(
-    Math.min(
-      bird.leftWingFold || 0,
-      bird.rightWingFold || 0
-    ),
-    0, 1
-  );
-  
-  const bankedSideAcceleration =
-    FLIGHT.lateralAcceleration *
-    Math.sin(bird.bank) *
-    Math.min(1, airflowFactor) *
-    supportedSpan;
-
-  const tailSideAcceleration =
-   8 * bird.tailTwist *
-   Math.min(1, airflowFactor) *
-   supportedSpan;
-
-  const sideAcceleration =
-    bankedSideAcceleration + tailSideAcceleration;
-
-  // Perpendicular to the airflow.
-  const sideX =
-    airspeed > 2 ? -airY / airspeed : rightX;
-
-  const sideY =
-    airspeed > 2 ? airX / airspeed : rightY;
-
+  let airspeed = Math.hypot(airX, airY);
+  const airflowFactor = clamp(airspeed / 68, 0, 1);
+  const sideAcceleration = (
+    FLIGHT.lateralAcceleration * Math.sin(bird.bank) +
+    8 * bird.tailTwist
+  ) * airflowFactor * turningSpan;
+  const sideX = airspeed > 2 ? -airY / airspeed : rightX;
+  const sideY = airspeed > 2 ? airX / airspeed : rightY;
   bird.velocityX += sideX * sideAcceleration * dt;
   bird.velocityY += sideY * sideAcceleration * dt;
-
-  // 10. Rotate the bird smoothly toward its curved flight path.
-  const desiredYawRate =
-    sideAcceleration / Math.max(35, airspeed);
-
-  bird.yawRate = ease(
-    bird.yawRate,
-    desiredYawRate,
-    dt,
-    FLIGHT.yawResponse
-  );
-
+  const desiredYawRate = sideAcceleration / Math.max(35, airspeed);
+  bird.yawRate = ease(bird.yawRate, desiredYawRate, dt, FLIGHT.yawResponse);
   bird.heading += bird.yawRate * dt;
 
-  // 11. Diving exchanges altitude for forward speed.
-  // This does not create powered thrust without a wingbeat.
-  const newForwardX = Math.sin(bird.heading);
-  const newForwardY = -Math.cos(bird.heading);
-
-  const diveAcceleration = bird.pitch === "forward"
-    ? Math.max(0, -bird.velocityZ) * FLIGHT.diveExchange
-    : 0;
-
-  bird.velocityX += newForwardX * diveAcceleration * dt;
-  bird.velocityY += newForwardY * diveAcceleration * dt;
-
-  // 12. Drag acts on speed relative to air.
-  const drag =
-    FLIGHT.horizontalDrag +
-    (bird.pitch === "backward" ? 0.62 : 0) +
-    (bird.flightMode === "flare" ? 0.75 : 0) +
-    bird.tailSpread * 0.11;
-
-  const dragFactor = Math.exp(-drag * dt);
-
-  bird.velocityX =
-    wind.x + (bird.velocityX - wind.x) * dragFactor;
-
-  bird.velocityY =
-    wind.y + (bird.velocityY - wind.y) * dragFactor;
-
-  const groundSpeed = Math.hypot(
-    bird.velocityX,
-    bird.velocityY
-  );
-
-  if (groundSpeed > FLIGHT.maxSpeed) {
-    const ratio = FLIGHT.maxSpeed / groundSpeed;
-    bird.velocityX *= ratio;
-    bird.velocityY *= ratio;
+  // 8. Dive: a modest capped speed assist ONLY while descending.
+  // Because horizontal and vertical units differ, this is game-tuned,
+  // not claimed to conserve SI energy exactly.
+  if (bird.pitch === 'forward' && bird.velocityZ < 0) {
+    const assist = FLIGHT.diveExchange * clamp(-bird.velocityZ / 8, 0, 1);
+    bird.velocityX += Math.sin(bird.heading) * assist * dt;
+    bird.velocityY -= Math.cos(bird.heading) * assist * dt;
   }
 
-  // 13. Recalculate airspeed after drag.
+  // 9. Drag scales with deployed wing area; tucked wings have less drag.
+  const raisedArea =
+    (bird.leftWing === 'raised' ? leftArea : 0) +
+    (bird.rightWing === 'raised' ? rightArea : 0);
+  const drag = FLIGHT.horizontalDrag +
+    0.24 * averageArea +
+    0.65 * raisedArea +
+    (bird.pitch === 'backward' ? 0.62 : 0) +
+    bird.tailSpread * 0.11;
+  const dragFactor = Math.exp(-drag * dt);
+  bird.velocityX = wind.x + (bird.velocityX - wind.x) * dragFactor;
+  bird.velocityY = wind.y + (bird.velocityY - wind.y) * dragFactor;
+  const speed = Math.hypot(bird.velocityX, bird.velocityY);
+  if (speed > FLIGHT.maxSpeed) {
+    const scale = FLIGHT.maxSpeed / speed;
+    bird.velocityX *= scale;
+    bird.velocityY *= scale;
+  }
+
+  // 10. Gliding is continuous aerodynamic lift from OPEN wings at speed.
   airX = bird.velocityX - wind.x;
   airY = bird.velocityY - wind.y;
-
-  const updatedAirspeed = Math.hypot(airX, airY);
-  bird.airspeed = updatedAirspeed;
-
-  // 14. Calculate gliding lift.
+  airspeed = Math.hypot(airX, airY);
+  bird.airspeed = airspeed;
   const glideFraction = clamp(
-    (updatedAirspeed - FLIGHT.stallSpeed) / 35,
-    0,
-    1
+    (airspeed - FLIGHT.stallSpeed) / 40, 0, 1
   );
-
-  const modeLift =
-    bird.flightMode === "glide" ? 1 :
-    bird.flightMode === "flare" ? 1.12 :
-    bird.flightMode === "fast-glide" ? 0.58 : 0.75;
-
   const pitchLift =
-    bird.pitch === "backward" ? 1.28 :
-    bird.pitch === "forward" ? 0.55 : 1;
-
-  // Gliding cannot produce endless level flight in still air.
-  const liftLimit = FLIGHT.gravity * (
-    bird.pitch === "forward" ? 0.54 :
-    bird.pitch === "backward" ? 0.985 : 0.90
+    bird.pitch === 'backward' ? 1.12 :
+    bird.pitch === 'forward' ? 0.55 : 1;
+  // No sustained level flight without wingbeats (or a real updraft).
+  const liftLimit = FLIGHT.gravity * 0.90;
+  const glideLift = Math.min(
+    liftLimit,
+    FLIGHT.glidingLift * glideFraction * pitchLift *
+      glideSpan * Math.max(0, Math.cos(bird.bank))
   );
+  const updraft = (wind.up || 0) * averageArea;
+  bird.aeroSpan = glideSpan;
+  bird.aeroLift = glideLift;
+  bird.aeroState = glideSpan < 0.08 ? 'TUCKED' :
+    airspeed < FLIGHT.stallSpeed ? 'STALL' :
+    glideSpan > 0.8 ? 'GLIDE' : 'PARTIAL';
 
-  const glideLift = bird.glide
-    ? Math.min(
-        liftLimit,
-        FLIGHT.glidingLift *
-        glideFraction *
-         modeLift *
-         pitchLift
-        ) *
-        supportedSpan *
-        Math.max(0, Math.cos(bird.bank))
-      : 0;
+  bird.velocityZ += (glideLift + updraft - FLIGHT.gravity) * dt;
+  // Higher vertical drag with more deployed wing surface.
+  const verticalDrag = FLIGHT.verticalDrag * (1 + 0.8 * averageArea);
+  bird.velocityZ *= Math.exp(-verticalDrag * dt);
+  bird.velocityZ = clamp(bird.velocityZ, -FLIGHT.maxFall, FLIGHT.maxRise);
 
-  const divePenalty =
-    bird.pitch === "forward" ? 2.2 : 0;
-
-  // 15. Apply gravity, lift and vertical wind.
-  bird.velocityZ += (
-    glideLift +
-    wind.up -
-    FLIGHT.gravity -
-    divePenalty
-  ) * dt;
-
-  bird.velocityZ *= Math.exp(
-    -FLIGHT.verticalDrag * dt
-  );
-
-  bird.velocityZ = clamp(
-    bird.velocityZ,
-    -FLIGHT.maxFall,
-    FLIGHT.maxRise
-  );
-
-  // 16. Update world position.
+  // 11. Integrate momentum; only actual ground/branch contact zeros velocity.
   bird.x += bird.velocityX * dt;
   bird.y += bird.velocityY * dt;
   bird.altitude += bird.velocityZ * dt;
-
-  // 17. Temporary altitude ceiling.
   const ceiling = Math.min(
-    FLIGHT.maxAltitude,
-    world.maxAltitude ?? FLIGHT.maxAltitude
+    FLIGHT.maxAltitude, world.maxAltitude ?? FLIGHT.maxAltitude
   );
-
   if (bird.altitude >= ceiling) {
     bird.altitude = ceiling;
     bird.velocityZ = Math.min(0, bird.velocityZ);
   }
-
-  // 18. Ground landing.
   if (bird.altitude <= 0) {
     bird.altitude = 0;
-    bird.velocityZ = 0;
-    bird.velocityX = 0;
-    bird.velocityY = 0;
+    bird.velocityZ = bird.velocityX = bird.velocityY = 0;
     bird.grounded = true;
-
-    bird.rollRate = 0;
-    bird.yawRate = 0;
-    bird.bank = 0;
-    bird.roll = 0;
+    bird.rollRate = bird.yawRate = bird.bank = bird.roll = 0;
+    // A stroke from just before landing must not count toward the next takeoff.
+    bird.pendingPowerStrokes.left = null;
+    bird.pendingPowerStrokes.right = null;
   } else {
     bird.grounded = false;
   }
-
-  // 19. World boundaries.
   const x = clamp(bird.x, 12, world.width - 12);
   const y = clamp(bird.y, 12, world.height - 12);
-
   if (x !== bird.x) bird.velocityX = 0;
   if (y !== bird.y) bird.velocityY = 0;
-
   bird.x = x;
   bird.y = y;
 }
