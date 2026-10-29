@@ -262,10 +262,12 @@ function drawWing(ctx, side, state, bird) {
   }
 
   // Articulated shoulder, elbow and wrist.
-  // Full up/down movement during one short commanded stroke.
+  // Only feather flex occurs automatically.
+  // The player's raised/middle/lowered commands
+  // determine the actual wing stroke.
   const beat = Math.sin(
-    (1 - pulse) * Math.PI * 2
-  );
+    (1 - pulse) * Math.PI
+  ) * 0.22;
   const bankOffset = (bird.bank || 0) * side * 7;
 
   const shoulder = {
