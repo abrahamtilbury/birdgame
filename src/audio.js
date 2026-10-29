@@ -1,6 +1,6 @@
 // Optional authentic Willie Wagtail recording; never auto-play on load.
-// Permanent asset: assets/audio/wagtail-contact.mp3.
-const CALL_PATH = './assets/audio/wagtail-contact.mp3';
+// Permanent asset: audio/wagtail-contact.mp3.
+const CALL_PATH = './audio/wagtail-contact.mp3';
 
 export function createBirdsong(toggleButton) {
   const call = new Audio(CALL_PATH);
