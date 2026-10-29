@@ -1,6 +1,6 @@
 // Optional authentic Willie Wagtail recording; never auto-play on load.
-// Asset must actually exist at /assets/audio/wagtail-contact.mp3.
-const CALL_PATH = './assets/audio/wagtail-contact.mp3';
+// Asset must actually exist at /audio/wagtail-contact.mp3.
+const CALL_PATH = './audio/wagtail-contact.mp3';
 
 export function createBirdsong(toggleButton) {
   const call = new Audio(CALL_PATH);
@@ -63,7 +63,7 @@ export function createBirdsong(toggleButton) {
   });
   paint();
   return {
-    // Temporary local-file preview: copy the audio into assets/audio for
+    // Temporary local-file preview: copy the audio into /audio for
     // permanent use. The user must still tap Bird calls: Off to play it.
     setFile(file) {
       if (!file || !(file.type.startsWith('audio/') || /\.(mp3|m4a|wav|ogg)$/i.test(file.name))) return false;
