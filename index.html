@@ -41,9 +41,7 @@
     <div class="game-extras">
       <button id="birdsongToggle" type="button" class="birdsong-toggle" aria-pressed="false">🔇 Bird calls: Off</button>
       <button id="milestonePreview" type="button" class="birdsong-toggle milestone-preview">📷 Preview family milestone</button>
-      <button id="milestoneLoadPhoto" type="button" class="birdsong-toggle">📁 Load photo (debug)</button>
       <button id="birdCallLoad" type="button" class="birdsong-toggle">🎵 Load call (debug)</button>
-      <input id="milestonePhotoFile" type="file" accept="image/*" hidden>
       <input id="birdCallFile" type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg" hidden>
     </div>
     <div id="nestStatus" class="nest-status" role="status" aria-live="polite"></div>
@@ -59,7 +57,6 @@
             <div id="familyPhotoFallback" hidden>
               <strong>Willie Wagtail photograph not found</strong>
               <span>Put your WebP in assets/images/wagtail-family-milestone.webp</span>
-              <button id="familyChoosePhoto" type="button">Choose your photo for preview</button>
             </div>
           </div>
           <div class="milestone-message">
