@@ -53,6 +53,7 @@ export function createWillieWagtail() {
     bank: 0,
     rollRate: 0,
     yawRate: 0,
+    turnPulse: 0,
     tailSpread: 0.35,
     tailTwist: 0,
     pitchVisual: 0,

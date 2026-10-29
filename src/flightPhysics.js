@@ -17,11 +17,11 @@ export const FLIGHT = Object.freeze({
   glidingLift: 8,
   stallSpeed: 28,
   rollImpulse: 3.8,
-  rollRestoring: 14,
-  rollDamping: 7.5,
-  heldRollTorque: 5,
+  rollRestoring: 18,
+  rollDamping: 9.5,
+  heldRollTorque: 17,
   maxBank: 1.02,
-  lateralAcceleration: 160,
+  lateralAcceleration: 185,
   coordinatedStrokeWindow: 0.16,
   lateralImpulsePerWing: 18,
   yawResponse: 11
@@ -115,6 +115,7 @@ export function updateFlightPhysics(bird, dt, world) {
     bird.altitude = 0;
     bird.velocityX = bird.velocityY = bird.velocityZ = 0;
     bird.rollRate = bird.yawRate = bird.bank = bird.roll = 0;
+    bird.turnPulse = 0;
     bird.aeroSpan = bird.aeroLift = 0;
     bird.aeroState = 'GROUND';
     bird.x = clamp(bird.x, 12, world.width - 12);
@@ -148,13 +149,16 @@ export function updateFlightPhysics(bird, dt, world) {
   const leftArea = wingArea(bird, 'left');
   const rightArea = wingArea(bird, 'right');
   const averageArea = (leftArea + rightArea) / 2;
-  const glideSpan = Math.min(leftArea, rightArea);
+  // Turns retain some lift with unequal wing extension. Fully tucked
+  // wings still have zero area, hence zero aerodynamic lift.
+  const matchedArea = Math.min(leftArea, rightArea);
+  const glideSpan = 0.55 * matchedArea + 0.45 * averageArea;
   const turningSpan = Math.sqrt(averageArea);
   const relativeX = bird.velocityX - wind.x;
   const relativeY = bird.velocityY - wind.y;
   const preAirspeed = Math.hypot(relativeX, relativeY);
   const controlAuthority = clamp(
-    (preAirspeed - FLIGHT.stallSpeed * 0.5) / 45, 0, 1
+    (preAirspeed - FLIGHT.stallSpeed * 0.35) / 42, 0, 1
   );
 
   // 4. Coordinated powered downstroke creates vertical lift.
@@ -188,6 +192,8 @@ export function updateFlightPhysics(bird, dt, world) {
     bird.velocityY += forwardY * thrust;
     // Design mapping: left wing -> right shove, right wing -> left shove.
     const asymmetry = leftLift - rightLift;
+    // A unilateral downstroke is a brief steering command, not just a shove.
+    bird.turnPulse = clamp((bird.turnPulse || 0) + asymmetry * 0.85, -1, 1);
     const sideways = asymmetry * FLIGHT.lateralImpulsePerWing;
     bird.velocityX += rightX * sideways;
     bird.velocityY += rightY * sideways;
@@ -203,10 +209,14 @@ export function updateFlightPhysics(bird, dt, world) {
 
   // 6. Roll, bank and heading are distinct physical/gameplay states.
   const heldAsymmetry = leftArea - rightArea;
+  const turnCommand = clamp(
+    heldAsymmetry + (bird.turnPulse || 0) * 1.15, -1, 1
+  );
+  bird.turnPulse = (bird.turnPulse || 0) * Math.exp(-3.4 * dt);
   const rollAcceleration =
     -FLIGHT.rollRestoring * bird.bank -
     FLIGHT.rollDamping * bird.rollRate +
-    heldAsymmetry * FLIGHT.heldRollTorque * controlAuthority;
+    turnCommand * FLIGHT.heldRollTorque * controlAuthority;
   bird.rollRate += rollAcceleration * dt;
   bird.bank = clamp(
     bird.bank + bird.rollRate * dt, -FLIGHT.maxBank, FLIGHT.maxBank
@@ -317,6 +327,7 @@ export function updateFlightPhysics(bird, dt, world) {
     bird.velocityZ = bird.velocityX = bird.velocityY = 0;
     bird.grounded = true;
     bird.rollRate = bird.yawRate = bird.bank = bird.roll = 0;
+    bird.turnPulse = 0;
     // A stroke from just before landing must not count toward the next takeoff.
     bird.pendingPowerStrokes.left = null;
     bird.pendingPowerStrokes.right = null;

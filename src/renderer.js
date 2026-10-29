@@ -227,6 +227,10 @@ function drawNest(ctx, world) {
   disk(ctx, x + 3, y + 4, r + 2, "rgba(16,37,25,.36)");
   disk(ctx, x, y, r, nest.built ? "#866A47" : "#B09564");
   disk(ctx, x, y, Math.max(2, r - 3.5), "#5C513F");
+  if (nest.eggs > 0) {
+    disk(ctx, x - 3, y, 3, '#FAF4DF');
+    disk(ctx, x + 3, y + 2, 3, '#EFE5CB');
+  }
   if (!nest.built) {
     ctx.fillStyle = "#FFF4BE";
     ctx.font = "11px monospace";
@@ -262,12 +266,10 @@ function drawWing(ctx, side, state, bird) {
   }
 
   // Articulated shoulder, elbow and wrist.
-  // Only feather flex occurs automatically.
-  // The player's raised/middle/lowered commands
-  // determine the actual wing stroke.
+  // Full up/down movement during one short commanded stroke.
   const beat = Math.sin(
-    (1 - pulse) * Math.PI
-  ) * 0.22;
+    (1 - pulse) * Math.PI * 2
+  );
   const bankOffset = (bird.bank || 0) * side * 7;
 
   const shoulder = {
@@ -321,26 +323,14 @@ function drawWing(ctx, side, state, bird) {
       pose * 3;
 
     // Overlapping diamond-like feather polygons.
-    // Tapered diamond-shaped primary feathers.
-  const midX =
-    rootX + (tipX - rootX) * 0.58;
-  
-  const midY =
-    rootY + (tipY - rootY) * 0.58;
-  
-  const halfWidth =
-    (2 + 2.5 * extension) *
-    (1 - fraction * 0.15);
-  
-  polygon(ctx, [
-    [rootX - side * 2, rootY],
-    [midX, midY - halfWidth],
-    [tipX, tipY],
-    [midX, midY + halfWidth],
-    [rootX + side * 2, rootY + 2]
-  ],
-  i % 2 ? "#394650" : "#45505A",
-  "#25323B");
+    polygon(ctx, [
+      [rootX - side * 3, rootY - 2],
+      [rootX + side * 3, rootY - 3],
+      [tipX, tipY],
+      [rootX + side * 2, rootY + 4]
+    ],
+    i % 2 ? "#394650" : "#45505A",
+    "#25323B");
   }
 }
 
@@ -481,8 +471,8 @@ function drawHud(ctx, bird, world, controls) {
     world.nest.started
       ? `Nest G:${world.nest.progress.grass}/${world.nest.required.grass} T:${world.nest.progress.twig}/${world.nest.required.twig}`
       : "Nest: take a twig to a suitable branch (N)",
-    bird.grounded ? "Space: peck | 7/9 flare 4/6 lift 1/3 thrust" :
-      bird.perchedOn ? "PERCHED N: build with material | any wing: takeoff" :
+    bird.grounded ? (bird.carrying ? "SPACE or X: drop carried item" : "SPACE: peck | 1+3 takeoff") :
+      bird.perchedOn ? "PERCHED N/SPACE: place material | any wing: takeoff" :
         "SPACE: grab | 8: dive 2: flare 4+6: glide"
   ];
   lines.forEach((line, i) => ctx.fillText(line, 16, 14 + i * 20));

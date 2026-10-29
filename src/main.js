@@ -6,7 +6,9 @@ import { updateFlightPhysics } from "./flightPhysics.js";
 import { createCamera, updateCamera } from "./camera.js";
 import { resolveCollisions, tryPerch } from "./collision.js";
 import { renderScene } from "./renderer.js";
-import { searchGround, useNest } from "./foraging.js";
+import { searchGround, useNest, dropCarriedItem } from "./foraging.js";
+import { createBirdsong } from "./audio.js";
+import { createFamilyMilestone } from "./milestones.js";
 import { updateMate } from "./mateAI.js";
 
 const canvas = document.getElementById("gameCanvas");
@@ -18,12 +20,15 @@ const camera = createCamera(canvas.width, canvas.height);
 updateCamera(camera, bird);
 
 const gameElement = document.getElementById("game");
+const birdsong = createBirdsong(document.getElementById('birdsongToggle'));
+const familyMilestone = createFamilyMilestone(document.getElementById('familyMilestone'));
 
-// WASD handles ground movement.
-// Keep the numpad dedicated to wings and pitch.
+// Grounded: touchscreen 8/4/2/6 are brown direction arrows.
+// Airborne: the same keys return to normal flight controls.
 function syncTouchMode() {
+  // Ground movement uses the separate WASD pad. Numpad always flies.
   input.touchGroundMode = false;
-  gameElement.classList.remove("ground-touch-mode");
+  gameElement.classList.remove('ground-touch-mode');
 }
 
 syncTouchMode();
@@ -55,17 +60,25 @@ window.birdFlightDebug = () => ({
   pitch: bird.pitch,
   pitchVisual: Number(bird.pitchVisual.toFixed(3)),
   bank: Number(bird.bank.toFixed(3)),
+  turnPulse: Number((bird.turnPulse || 0).toFixed(3)),
+  headingDegrees: Number((bird.heading * 180 / Math.PI).toFixed(1)),
   flightMode: bird.flightMode,
   hunger: Number((bird.hunger ?? 80).toFixed(1)),
   leftWingFold: Number((bird.leftWingFold || 0).toFixed(2)),
   rightWingFold: Number((bird.rightWingFold || 0).toFixed(2)),
   nestStarted: world.nest.started,
   nestBuilt: world.nest.built,
+  familyStarted: !!world.nest.familyStarted,
   mate: { x: Number(world.mate.x.toFixed(1)), y: Number(world.mate.y.toFixed(1)),
     altitude: Number(world.mate.altitude.toFixed(2)) }
 });
 
 function update(dt) {
+  if (familyMilestone.isOpen) {
+    input.wingEvents.length = 0;
+    input.actions.length = 0;
+    return;
+  }
   const previous = { x: bird.x, y: bird.y, altitude: bird.altitude };
   world.time += dt;
   updateBird(bird, input, dt);
@@ -75,36 +88,17 @@ function update(dt) {
 
   for (const action of actions) {
     
-    if (action === "KeyX") {
-      const item = bird.carrying;
-    
-      if (item) {
-        bird.carrying = null;
-    
-        bird.inventory[item] = Math.max(
-          0,
-          (bird.inventory[item] || 0) - 1
-        );
-    
-        // Return dropped material to the ground.
-        world.groundResources.push({
-          id: `dropped-${world.groundResources.length}`,
-          type: item,
-          x: bird.x,
-          y: bird.y,
-          collected: false
-        });
-    
-        setBirdMessage(bird, `Dropped ${item} — beak free`);
-      } else {
-        setBirdMessage(bird, "Beak already empty");
-      }
-    }
+    if (action === 'KeyX') dropCarriedItem(bird, world);
 
     if (action === "Space") {
-      if (bird.grounded) searchGround(bird, world);
-      else if (bird.perchedOn) setBirdMessage(bird,
-        "Gripping branch — press N to build with material in your beak");
+      if (bird.grounded) {
+        if (bird.carrying) dropCarriedItem(bird, world);
+        else searchGround(bird, world);
+      }
+      else if (bird.perchedOn) {
+        if (bird.carrying) useNest(bird, world);
+        else setBirdMessage(bird, 'Perched — find nesting material');
+      }
       else if (tryPerch(bird, world)) setBirdMessage(bird,
         bird.carrying ? "Perched! Press N to use material in beak" :
           "Perched! Bring a twig and press N to begin a nest");
@@ -120,6 +114,8 @@ function update(dt) {
       setBirdMessage(bird, "Fly closer to a branch, then Space or F to grip");
   }
   updateMate(world, dt);
+  familyMilestone.update(world, dt);
+  birdsong.update(dt, world);
   updateCamera(camera, bird);
   syncTouchMode();
 }

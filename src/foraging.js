@@ -101,3 +101,21 @@ export function useNest(bird, world) {
   );
   setBirdMessage(bird, nest.built ? "Nest complete!" : `Added ${type} to your nest`);
 }
+
+// X anywhere, or Space while grounded with something in the beak.
+// A dropped object is returned to the forest, not silently deleted.
+export function dropCarriedItem(bird, world) {
+  const type = bird.carrying;
+  if (!type) {
+    setBirdMessage(bird, "Beak already empty");
+    return false;
+  }
+  bird.carrying = null;
+  bird.inventory[type] = Math.max(0, (bird.inventory[type] || 0) - 1);
+  world.groundResources.push({
+    id: `dropped-${world.groundResources.length}-${Math.floor(world.time * 1000)}`,
+    type, x: bird.x, y: bird.y, collected: false
+  });
+  setBirdMessage(bird, `Dropped ${type} — beak free`);
+  return true;
+}

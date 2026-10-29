@@ -129,7 +129,8 @@ export function createWorld() {
       treeId: nestTree.id, branchId: nestBranch.id,
       point: nestBranch.perchPoints[0],
       progress: { grass: 0, twig: 0, web: 0 },
-      required: { grass: 3, twig: 1, web: 0 }, built: false
+      required: { grass: 3, twig: 1, web: 0 }, built: false,
+      familyStarted: false, eggs: 0
     },
     mate: { x: 355, y: 337, altitude: 0, phase: 0, heading: 1.4,
       grounded: true, hopTimer: 0, hopAnimation: 0 },
