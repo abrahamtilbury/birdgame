@@ -7,10 +7,8 @@ export function createFamilyMilestone(overlay) {
   let seen = false;
   let open = false;
   let mateTime = 0;
-  let temporaryPhotoURL = null;
 
-  // The normal project file must live in assets/images. In debug mode the
-  // player may preview a local photo without moving it into the repository.
+  // The photo is loaded from the permanent project asset path in index.html.
   photo.addEventListener('error', () => {
     photo.hidden = true;
     fallback.hidden = false;
@@ -19,15 +17,6 @@ export function createFamilyMilestone(overlay) {
     photo.hidden = false;
     fallback.hidden = true;
   });
-  function setPhotoFile(file) {
-    if (!file || !file.type.startsWith('image/')) return false;
-    if (temporaryPhotoURL) URL.revokeObjectURL(temporaryPhotoURL);
-    temporaryPhotoURL = URL.createObjectURL(file);
-    photo.hidden = false;
-    fallback.hidden = true;
-    photo.src = temporaryPhotoURL;
-    return true;
-  }
   function dismiss() {
     open = false;
     overlay.hidden = true;
@@ -48,7 +37,6 @@ export function createFamilyMilestone(overlay) {
     get isOpen() { return open; },
     // A visual preview only: does NOT mark eggs, nest, or event as completed.
     preview() { show(); },
-    setPhotoFile,
     update(world, dt) {
       const nest = world.nest;
       if (seen || !nest.built || !nest.point) return;

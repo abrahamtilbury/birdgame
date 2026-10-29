@@ -25,14 +25,8 @@ const familyMilestone = createFamilyMilestone(document.getElementById('familyMil
 document.getElementById('milestonePreview').addEventListener('click', () => {
   familyMilestone.preview();
 });
-const photoPicker = document.getElementById('milestonePhotoFile');
 const audioPicker = document.getElementById('birdCallFile');
-document.getElementById('milestoneLoadPhoto').addEventListener('click', () => photoPicker.click());
-document.getElementById('familyChoosePhoto').addEventListener('click', () => photoPicker.click());
 document.getElementById('birdCallLoad').addEventListener('click', () => audioPicker.click());
-photoPicker.addEventListener('change', () => {
-  if (familyMilestone.setPhotoFile(photoPicker.files?.[0])) familyMilestone.preview();
-});
 audioPicker.addEventListener('change', () => {
   if (birdsong.setFile(audioPicker.files?.[0])) {
     setBirdMessage(bird, 'Bird call selected. Tap Bird calls: Off to listen.', 5);
