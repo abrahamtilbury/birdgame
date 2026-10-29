@@ -20,9 +20,9 @@ export const FLIGHT = Object.freeze({
 
   // Rotational dynamics.
   rollImpulse: 3.8,
-  rollRestoring: 9.0,
-  rollDamping: 5.4,
-  heldRollTorque: 0.95,
+  rollRestoring: 14.0,
+  rollDamping: 7.5,
+  heldRollTorque: 5.0,
   maxBank: 1.02,
 
   // Bank-generated turning.
