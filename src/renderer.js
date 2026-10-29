@@ -321,14 +321,26 @@ function drawWing(ctx, side, state, bird) {
       pose * 3;
 
     // Overlapping diamond-like feather polygons.
-    polygon(ctx, [
-      [rootX - side * 3, rootY - 2],
-      [rootX + side * 3, rootY - 3],
-      [tipX, tipY],
-      [rootX + side * 2, rootY + 4]
-    ],
-    i % 2 ? "#394650" : "#45505A",
-    "#25323B");
+    // Tapered diamond-shaped primary feathers.
+  const midX =
+    rootX + (tipX - rootX) * 0.58;
+  
+  const midY =
+    rootY + (tipY - rootY) * 0.58;
+  
+  const halfWidth =
+    (2 + 2.5 * extension) *
+    (1 - fraction * 0.15);
+  
+  polygon(ctx, [
+    [rootX - side * 2, rootY],
+    [midX, midY - halfWidth],
+    [tipX, tipY],
+    [midX, midY + halfWidth],
+    [rootX + side * 2, rootY + 2]
+  ],
+  i % 2 ? "#394650" : "#45505A",
+  "#25323B");
   }
 }
 
