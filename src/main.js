@@ -19,15 +19,11 @@ updateCamera(camera, bird);
 
 const gameElement = document.getElementById("game");
 
-// Grounded: touchscreen 8/4/2/6 are brown direction arrows.
-// Airborne: the same keys return to normal flight controls.
+// WASD handles ground movement.
+// Keep the numpad dedicated to wings and pitch.
 function syncTouchMode() {
-  input.touchGroundMode = bird.grounded;
-
-  gameElement.classList.toggle(
-    "ground-touch-mode",
-    bird.grounded
-  );
+  input.touchGroundMode = false;
+  gameElement.classList.remove("ground-touch-mode");
 }
 
 syncTouchMode();
