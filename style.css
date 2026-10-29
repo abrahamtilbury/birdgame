@@ -233,12 +233,12 @@ body {
 #gameCanvas { touch-action: manipulation; }
 .milestone-photo-frame [hidden] { display: none; }
 
-/* v0.12.2 diagnostic controls. Kept outside the canvas for touch compatibility. */
+/* Fixed audio toggle and milestone preview buttons. */
 .game-extras { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; }
 .milestone-preview { background: #493c2a; border-color: #ad9167; }
 .milestone-preview:hover { background: #604c32; }
 
-/* v0.12.3 visible nesting objective and media-preview diagnostics. */
+/* Nest objective and family milestone feedback. */
 .nest-status {
   background: #223b2b;
   color: #f5efda;
@@ -262,11 +262,4 @@ body {
   font: 12px/1.45 system-ui, sans-serif;
   overflow-wrap: anywhere;
 }
-#familyPhotoFallback button {
-  cursor: pointer;
-  color: #183b29;
-  background: #f4edda;
-  border-radius: 6px;
-  border: none;
-  padding: 8px;
-}
+
