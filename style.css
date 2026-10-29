@@ -70,7 +70,7 @@ body {
 #keypad kbd.pressed { background: #C49A43; color: #111; }
 
 /* The displayed numpad is a playable touch/mouse alternative. */
-#keypad kbd { cursor: pointer; touch-action: none; }
+#keypad kbd { cursor: pointer; touch-action: manipulation; }
 #keypad kbd:focus-visible { outline: 3px solid #fff3bd; outline-offset: 2px; }
 
 /* iPhone/touch controls. Hide the extra pad on large keyboard-driven screens. */
@@ -90,7 +90,7 @@ body {
   color: #fff;
   font: 700 16px/1 system-ui, sans-serif;
   cursor: pointer;
-  touch-action: none;
+  touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
@@ -177,19 +177,21 @@ body {
   ) .ground-label { display: inline; font-size: 22px; }
 }
 
-/* Prevent double-tap zoom during rapid wing flapping. */
-#game {
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-}
-
+/* Fast gameplay taps without disabling pinch-to-zoom. */
+#game,
 #gameCanvas,
 #keypad,
 #keypad kbd,
 #touchControls,
 #touchControls button {
-  touch-action: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Don't select text when repeatedly pressing game keys. */
+#keypad kbd,
+#touchControls button {
   -webkit-user-select: none;
   user-select: none;
-  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
 }
