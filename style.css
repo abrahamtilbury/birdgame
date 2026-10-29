@@ -232,3 +232,41 @@ body {
 /* Preserve deliberate pinch zoom on the game canvas, not touch buttons. */
 #gameCanvas { touch-action: manipulation; }
 .milestone-photo-frame [hidden] { display: none; }
+
+/* v0.12.2 diagnostic controls. Kept outside the canvas for touch compatibility. */
+.game-extras { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; }
+.milestone-preview { background: #493c2a; border-color: #ad9167; }
+.milestone-preview:hover { background: #604c32; }
+
+/* v0.12.3 visible nesting objective and media-preview diagnostics. */
+.nest-status {
+  background: #223b2b;
+  color: #f5efda;
+  border: 1px solid #98b98c;
+  border-radius: 8px;
+  font: 600 14px/1.4 system-ui, sans-serif;
+  box-sizing: border-box;
+  padding: 10px 13px;
+  width: 100%;
+  text-align: center;
+}
+.build-version { color: #314b35; font: 11px/1.3 monospace; text-align: center; }
+#familyPhotoFallback:not([hidden]) {
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  color: #f4edda;
+  padding: 12px;
+  font: 12px/1.45 system-ui, sans-serif;
+  overflow-wrap: anywhere;
+}
+#familyPhotoFallback button {
+  cursor: pointer;
+  color: #183b29;
+  background: #f4edda;
+  border-radius: 6px;
+  border: none;
+  padding: 8px;
+}
