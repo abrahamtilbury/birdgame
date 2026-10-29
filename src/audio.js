@@ -1,24 +1,34 @@
-// Small, opt-in Willie Wagtail contact-call layer. No autoplay.
-// Put the actual MP3 at assets/audio/wagtail-contact.mp3.
+// Optional authentic Willie Wagtail recording; never auto-play on load.
+// Asset must actually exist at /assets/audio/wagtail-contact.mp3.
+const CALL_PATH = './assets/audio/wagtail-contact.mp3';
+
 export function createBirdsong(toggleButton) {
-  const call = new Audio('./assets/audio/wagtail-contact.mp3');
+  const call = new Audio(CALL_PATH);
   call.preload = 'none';
   call.loop = false;
   call.volume = 0.24;
   let enabled = false;
-  let available = true;
+  let problem = '';
   let elapsed = 0;
   let nextCall = 20 + Math.random() * 25;
+  let localAudioURL = null;
+  let activePath = CALL_PATH;
 
   function paint() {
-    toggleButton.textContent = !available ? 'Bird call unavailable' :
-      enabled ? '🔊 Bird calls: On' : '🔇 Bird calls: Off';
+    toggleButton.textContent = enabled ? '🔊 Bird calls: On' :
+      problem ? '⚠ Retry bird call' : '🔇 Bird calls: Off';
+    toggleButton.title = problem || `Play authentic contact call (${activePath})`;
     toggleButton.setAttribute('aria-pressed', String(enabled));
-    toggleButton.disabled = !available;
+    // Do not disable: after copying in the missing file, retry must be possible.
+    toggleButton.disabled = false;
   }
-  call.addEventListener('error', () => { available = false; enabled = false; paint(); });
+
+  call.addEventListener('error', () => {
+    enabled = false;
+    problem = `Could not load ${activePath}. Check the name, extension and case.`;
+    paint();
+  });
   toggleButton.addEventListener('click', async () => {
-    if (!available) return;
     if (enabled) {
       enabled = false;
       call.pause();
@@ -26,34 +36,67 @@ export function createBirdsong(toggleButton) {
       paint();
       return;
     }
+    problem = '';
+    paint();
     try {
-      // A direct user gesture unlocks playback on iPhone browsers.
+      // Retry the real file after a 404, rather than permanently disabling audio.
+      if (call.error) {
+        call.src = localAudioURL || `${CALL_PATH}?retry=${Date.now()}`;
+        call.load();
+      }
       call.currentTime = 0;
-      await call.play();
+      await call.play(); // In the user's actual click, unlocks mobile media.
       enabled = true;
       elapsed = 0;
-      paint();
-    } catch (_) {
-      available = false;
+      nextCall = 20 + Math.random() * 25;
+    } catch (error) {
       enabled = false;
-      paint();
+      problem = error?.name === 'NotAllowedError'
+        ? 'Browser blocked audio. Tap again to enable.'
+        : `Could not play ${activePath}. Confirm the audio file exists and is valid.`;
+      console.warn('[Bird Flight] Birdsong unavailable:', problem, error);
     }
+    paint();
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && !call.paused) call.pause();
   });
   paint();
   return {
+    // Temporary local-file preview: copy the audio into assets/audio for
+    // permanent use. The user must still tap Bird calls: Off to play it.
+    setFile(file) {
+      if (!file || !(file.type.startsWith('audio/') || /\.(mp3|m4a|wav|ogg)$/i.test(file.name))) return false;
+      enabled = false;
+      call.pause();
+      if (localAudioURL) URL.revokeObjectURL(localAudioURL);
+      localAudioURL = URL.createObjectURL(file);
+      activePath = file.name;
+      call.src = localAudioURL;
+      call.load();
+      problem = '';
+      paint();
+      return true;
+    },
+    status() { return { enabled, problem, path: activePath }; },
     update(dt, world) {
-      if (!enabled || !available || document.hidden) return;
+      if (!enabled || document.hidden) return;
       elapsed += dt;
       if (elapsed < nextCall || !call.paused) return;
       elapsed = 0;
       nextCall = 20 + Math.random() * 25;
       const nest = world.nest;
       const mate = world.mate;
-      const nearNest = nest.started &&
+      const nearNest = nest.started && nest.point &&
         Math.hypot(mate.x - nest.point.x, mate.y - nest.point.y) < 60;
       call.volume = nearNest ? 0.28 : 0.18;
       call.currentTime = 0;
-      call.play().catch(() => { enabled = false; paint(); });
+      call.play().catch(error => {
+        enabled = false;
+        problem = `Playback failed for ${activePath}`;
+        console.warn('[Bird Flight]', problem, error);
+        paint();
+      });
     }
   };
 }

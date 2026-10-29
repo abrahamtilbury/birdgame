@@ -5,7 +5,7 @@
 
 export const FLIGHT = Object.freeze({
   gravity: 9.8,
-  impulsePerWing: 2.6,
+  impulsePerWing: 3.1,
   thrustPerWing: 17,
   maxRise: 14,
   maxFall: 22,
@@ -14,17 +14,18 @@ export const FLIGHT = Object.freeze({
   horizontalDrag: 0.28,
   verticalDrag: 0.08,
   diveExchange: 2.8,
-  glidingLift: 8,
-  stallSpeed: 28,
+  glidingLift: 9.2,
+  stallSpeed: 24,
   rollImpulse: 3.8,
   rollRestoring: 18,
   rollDamping: 9.5,
   heldRollTorque: 17,
-  maxBank: 1.02,
+  maxBank: 0.85,
+  maxTurnRate: 3.0, // rad/s: agile asymmetric wing steering
   lateralAcceleration: 185,
   coordinatedStrokeWindow: 0.16,
   lateralImpulsePerWing: 18,
-  yawResponse: 11
+  yawResponse: 15
 });
 
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
@@ -45,9 +46,9 @@ function wingArea(bird, side) {
     (POSE_AREA[bird[`${side}Wing`]] ?? 0);
 }
 
-// Only *lowered* inputs are powered strokes. Events come directly from
-// bird.js with their original performance.now() timestamps. A pending
-// stroke may be paired ONCE with an opposite-side stroke within 160 ms.
+// A fresh 4+6 pair is a lifting stroke; 1+3 is a thrust-heavy stroke.
+// Match the SAME kind (middle or lowered) within 160ms. A pending
+// stroke can be paired only once; holding wings produces no repeat power.
 function consumePowerStrokes(bird, world) {
   const pending = bird.pendingPowerStrokes ??= { left: null, right: null };
   const events = bird.powerStrokeEvents?.splice(0) ?? [];
@@ -64,7 +65,7 @@ function consumePowerStrokes(bird, world) {
       : world.time * 1000;
     const other = pending[opposite];
 
-    if (other && time >= other.atMs &&
+    if (other && other.kind === event.kind && time >= other.atMs &&
         time - other.atMs <= FLIGHT.coordinatedStrokeWindow * 1000) {
       pairedLift += 2 * Math.min(event.lift, other.lift);
       pairedThrust += event.thrust + other.thrust;
@@ -110,7 +111,8 @@ export function updateFlightPhysics(bird, dt, world) {
   }
 
   // 2. An unpaired stroke cannot launch the bird, even if tapped repeatedly.
-  // Let event timestamps survive grounded ticks for staggered 1+3 takeoff.
+  // Fresh 1+3 or 4+6 pairs take off; 7+9 can flare but never launch.
+  // Let event timestamps survive grounded ticks for staggered pairing.
   if (bird.grounded && !bird.perchedOn && pair.pairs === 0) {
     bird.altitude = 0;
     bird.velocityX = bird.velocityY = bird.velocityZ = 0;
@@ -158,11 +160,11 @@ export function updateFlightPhysics(bird, dt, world) {
   const relativeY = bird.velocityY - wind.y;
   const preAirspeed = Math.hypot(relativeX, relativeY);
   const controlAuthority = clamp(
-    (preAirspeed - FLIGHT.stallSpeed * 0.35) / 42, 0, 1
+    (preAirspeed - 5) / 30, 0, 1
   );
 
-  // 4. Coordinated powered downstroke creates vertical lift.
-  // One-wing strokes have zero *powered vertical* lift, but still shove/roll.
+  // 4. Coordinated strokes create vertical lift. 4+6 favours height,
+  // 1+3 favours horizontal thrust. A unilateral stroke cannot take off.
   if (pair.pairs > 0) {
     const liftMultiplier =
       bird.pitch === 'backward' ? 1.12 :
@@ -207,22 +209,18 @@ export function updateFlightPhysics(bird, dt, world) {
     bird.velocityY = wind.y + (bird.velocityY - wind.y) * brakeFactor;
   }
 
-  // 6. Roll, bank and heading are distinct physical/gameplay states.
+  // 6. Held asymmetry gives an immediate, predictable steering command.
+  // Roll is the body pose; yaw curves the velocity vector (step 7).
+  // They are separate states, but are coordinated by the same command.
   const heldAsymmetry = leftArea - rightArea;
-  const turnCommand = clamp(
-    heldAsymmetry + (bird.turnPulse || 0) * 1.15, -1, 1
+  const turnCommand = (wasGrounded || wasPerched) ? 0 : clamp(
+    heldAsymmetry * 1.8 + (bird.turnPulse || 0) * 1.4, -1, 1
   );
-  bird.turnPulse = (bird.turnPulse || 0) * Math.exp(-3.4 * dt);
-  const rollAcceleration =
-    -FLIGHT.rollRestoring * bird.bank -
-    FLIGHT.rollDamping * bird.rollRate +
-    turnCommand * FLIGHT.heldRollTorque * controlAuthority;
-  bird.rollRate += rollAcceleration * dt;
-  bird.bank = clamp(
-    bird.bank + bird.rollRate * dt, -FLIGHT.maxBank, FLIGHT.maxBank
-  );
-  if (Math.abs(bird.bank) >= FLIGHT.maxBank &&
-      bird.rollRate * bird.bank > 0) bird.rollRate = 0;
+  bird.turnPulse = (bird.turnPulse || 0) * Math.exp(-4.5 * dt);
+  const previousBank = bird.bank;
+  const desiredBank = FLIGHT.maxBank * turnCommand * controlAuthority;
+  bird.bank = ease(bird.bank, desiredBank, dt, 10);
+  bird.rollRate = (bird.bank - previousBank) / dt;
   bird.roll = bird.bank;
 
   const spreadTarget =
@@ -234,23 +232,22 @@ export function updateFlightPhysics(bird, dt, world) {
     bird.tailTwist, clamp(bird.bank * 0.55, -0.6, 0.6), dt, 9
   );
 
-  // 7. Banked lift generates sideways *acceleration* at useful airspeed;
-  // yaw follows the resulting curved velocity, rather than flap input itself.
+  // 7. Rotate the actual air-relative motion through the commanded turn.
+  // Previous code let heading change while velocity continued nearly straight,
+  // which felt like no steering when the camera followed the bird.
   let airX = bird.velocityX - wind.x;
   let airY = bird.velocityY - wind.y;
   let airspeed = Math.hypot(airX, airY);
-  const airflowFactor = clamp(airspeed / 68, 0, 1);
-  const sideAcceleration = (
-    FLIGHT.lateralAcceleration * Math.sin(bird.bank) +
-    8 * bird.tailTwist
-  ) * airflowFactor * turningSpan;
-  const sideX = airspeed > 2 ? -airY / airspeed : rightX;
-  const sideY = airspeed > 2 ? airX / airspeed : rightY;
-  bird.velocityX += sideX * sideAcceleration * dt;
-  bird.velocityY += sideY * sideAcceleration * dt;
-  const desiredYawRate = sideAcceleration / Math.max(35, airspeed);
+  const turnAuthority = clamp((airspeed - 5) / 30, 0, 1);
+  const desiredYawRate = FLIGHT.maxTurnRate * turnCommand * turnAuthority *
+    Math.min(1, turningSpan * 1.5);
   bird.yawRate = ease(bird.yawRate, desiredYawRate, dt, FLIGHT.yawResponse);
-  bird.heading += bird.yawRate * dt;
+  const turnAngle = bird.yawRate * dt;
+  bird.heading += turnAngle;
+  const cosine = Math.cos(turnAngle);
+  const sine = Math.sin(turnAngle);
+  bird.velocityX = wind.x + airX * cosine - airY * sine;
+  bird.velocityY = wind.y + airX * sine + airY * cosine;
 
   // 8. Dive: a modest capped speed assist ONLY while descending.
   // Because horizontal and vertical units differ, this is game-tuned,
@@ -266,7 +263,7 @@ export function updateFlightPhysics(bird, dt, world) {
     (bird.leftWing === 'raised' ? leftArea : 0) +
     (bird.rightWing === 'raised' ? rightArea : 0);
   const drag = FLIGHT.horizontalDrag +
-    0.24 * averageArea +
+    0.12 * averageArea +
     0.65 * raisedArea +
     (bird.pitch === 'backward' ? 0.62 : 0) +
     bird.tailSpread * 0.11;

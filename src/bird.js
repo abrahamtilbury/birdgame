@@ -74,15 +74,17 @@ export const WING_EFFECTS = Object.freeze({
 
   // Extension provides lift.
   middle: {
-    lift: 0.55,
-    thrust: 0.20,
+    // Fresh 4+6 pair = lifting flap. Holding 4+6 = open-wing glide.
+    lift: 1.50,
+    thrust: 1.20,
     brake: 0.05
   },
 
   // Power stroke generates most of the propulsion.
   lowered: {
-    lift: 1.25,
-    thrust: 1.35,
+    // 1+3 = thrust-heavy power flap; less vertical impulse than 4+6.
+    lift: 1.15,
+    thrust: 1.75,
     brake: 0
   }
 });
@@ -169,11 +171,13 @@ function applyWingEvent(bird, event) {
   bird[`${side}ThrustImpulse`] += effect.thrust * power;
   bird[`${side}BrakeImpulse`] += effect.brake;
 
-  // Preserve the original downstroke event. Do not infer it later from
-  // bird.leftWing/rightWing: several stage inputs can arrive in one tick.
-  if (position === "lowered") {
+  // Fresh, paired 4+6 events give a lifting stroke; paired 1+3 events
+  // give a thrust-heavy stroke. Holding a key creates no extra impulses.
+  // Keep original event timestamps so staggered inputs pair correctly.
+  if (position === "middle" || position === "lowered") {
     bird.powerStrokeEvents.push({
       side,
+      kind: position,
       atMs,
       lift: effect.lift * power,
       thrust: effect.thrust * power
@@ -308,7 +312,9 @@ export function updateBird(bird, controls, dt) {
   bird.flightMode = controls.pressed.has('Numpad4') && controls.pressed.has('Numpad6') ? 'glide' :
     controls.pressed.has('Numpad7') && controls.pressed.has('Numpad9') ? 'flare' :
     controls.pressed.has('Numpad1') && controls.pressed.has('Numpad3') ? 'fast-glide' :
-    bird.glide ? 'mixed-wing' : bird.grounded ? 'ground' : 'free-flight';
+    (bird.leftHeld && !bird.rightHeld) ? 'bank-right' :
+    (bird.rightHeld && !bird.leftHeld) ? 'bank-left' :
+    bird.grounded ? 'ground' : 'free-flight';
   bird.tailPhase += dt * (bird.grounded ? 15 : 9);
 
   bird.hunger = Math.max(

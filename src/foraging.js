@@ -76,8 +76,9 @@ export function useNest(bird, world) {
     nest.point = { x: bird.perchedOn.x, y: bird.perchedOn.y, height: branch.height };
     // The mate will now travel toward the chosen home branch over time.
   }
-  if (bird.perchedOn.branchId !== nest.branchId) {
-    setBirdMessage(bird, "Return to your nesting branch");
+  if (bird.perchedOn.treeId !== nest.treeId ||
+      bird.perchedOn.branchId !== nest.branchId) {
+    setBirdMessage(bird, "Return to the same tree and branch where you started the nest", 4);
     return;
   }
   if (nest.built) {
@@ -86,7 +87,9 @@ export function useNest(bird, world) {
   }
   const type = bird.carrying;
   if (!type || bird.inventory[type] < 1) {
-    setBirdMessage(bird, "Find grass or a fallen twig to carry");
+    const grassLeft = Math.max(0, nest.required.grass - nest.progress.grass);
+    const twigsLeft = Math.max(0, nest.required.twig - nest.progress.twig);
+    setBirdMessage(bird, `Need ${grassLeft} more grass and ${twigsLeft} more twig. Bring one at a time.`, 4);
     return;
   }
   if (nest.progress[type] >= nest.required[type]) {
@@ -99,7 +102,8 @@ export function useNest(bird, world) {
   nest.built = ["grass", "twig"].every(
     type => nest.progress[type] >= nest.required[type]
   );
-  setBirdMessage(bird, nest.built ? "Nest complete!" : `Added ${type} to your nest`);
+  const progress = `Grass ${nest.progress.grass}/${nest.required.grass}, twig ${nest.progress.twig}/${nest.required.twig}`;
+  setBirdMessage(bird, nest.built ? `Nest complete! ${progress}` : `Added ${type}! ${progress}`, 4.5);
 }
 
 // X anywhere, or Space while grounded with something in the beak.
