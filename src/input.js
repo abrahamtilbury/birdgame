@@ -43,6 +43,22 @@ export function getNumber(code) {
 export function initInput() {
   // Covers both keypad keys and HTML action buttons.
   const controls = document.querySelectorAll("[data-key]");
+
+  // iOS Safari: CSS alone has not reliably prevented double-tap zoom.
+  // Block the browser gesture ONLY on physical game-control pads.
+  // The canvas is intentionally excluded so two-finger pinch still works.
+  for (const padId of ['keypad', 'touchControls']) {
+    const pad = document.getElementById(padId);
+    if (!pad) continue;
+    const suppressPadGesture = event => {
+      if (event.cancelable) event.preventDefault();
+    };
+    for (const type of ['touchstart', 'touchmove', 'touchend']) {
+      pad.addEventListener(type, suppressPadGesture, { passive: false });
+    }
+    pad.addEventListener('dblclick', suppressPadGesture);
+  }
+
   const sourcesByCode = new Map();
   const downAt = new Map();
   const lastWingAt = new Map();

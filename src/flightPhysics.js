@@ -25,7 +25,13 @@ export const FLIGHT = Object.freeze({
   lateralAcceleration: 185,
   coordinatedStrokeWindow: 0.16,
   lateralImpulsePerWing: 18,
-  yawResponse: 15
+  yawResponse: 15,
+  // Approximate 20 g body plus nest material; NOT a calibrated mass model.
+  bodyMassKg: 0.020,
+  twigMassKg: 0.003,
+  grassMassKg: 0.001,
+  airflowReferenceSpeed: 65, // horizontal game pixels/s, not SI m/s
+  tailDragFactor: 0.20
 });
 
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
@@ -151,6 +157,13 @@ export function updateFlightPhysics(bird, dt, world) {
   const leftArea = wingArea(bird, 'left');
   const rightArea = wingArea(bird, 'right');
   const averageArea = (leftArea + rightArea) / 2;
+  // A twig is a modest mechanical handicap, not an implausible 5 g penalty.
+  // Retain this gameplay scale until the whole world uses SI coordinates.
+  const cargoMassKg = bird.carrying === 'twig' ? FLIGHT.twigMassKg :
+    bird.carrying === 'grass' ? FLIGHT.grassMassKg : 0;
+  const effectiveMassKg = FLIGHT.bodyMassKg + cargoMassKg;
+  const massMultiplier = effectiveMassKg / FLIGHT.bodyMassKg;
+  bird.effectiveMassKg = effectiveMassKg;
   // Turns retain some lift with unequal wing extension. Fully tucked
   // wings still have zero area, hence zero aerodynamic lift.
   const matchedArea = Math.min(leftArea, rightArea);
@@ -170,8 +183,8 @@ export function updateFlightPhysics(bird, dt, world) {
       bird.pitch === 'backward' ? 1.12 :
       bird.pitch === 'forward' ? 0.83 : 1;
     const verticalFactor = Math.max(0.68, Math.cos(bird.bank));
-    bird.velocityZ += pair.pairedLift * FLIGHT.impulsePerWing *
-      liftMultiplier * verticalFactor;
+    bird.velocityZ += (pair.pairedLift * FLIGHT.impulsePerWing *
+      liftMultiplier * verticalFactor) / massMultiplier;
     bird.grounded = false;
   }
 
@@ -183,23 +196,26 @@ export function updateFlightPhysics(bird, dt, world) {
     bird.pitch === 'backward' ? 0.62 : 1;
   if (wasGrounded || wasPerched) {
     if (pair.pairs > 0) {
-      const thrust = pair.pairedThrust * FLIGHT.thrustPerWing * thrustMultiplier;
+      const thrust = pair.pairedThrust * FLIGHT.thrustPerWing *
+        thrustMultiplier / massMultiplier;
       bird.velocityX += forwardX * thrust;
       bird.velocityY += forwardY * thrust;
     }
   } else if (total > 0) {
     const thrust = (leftThrust + rightThrust) *
-      FLIGHT.thrustPerWing * thrustMultiplier;
+      FLIGHT.thrustPerWing * thrustMultiplier / massMultiplier;
     bird.velocityX += forwardX * thrust;
     bird.velocityY += forwardY * thrust;
     // Design mapping: left wing -> right shove, right wing -> left shove.
     const asymmetry = leftLift - rightLift;
     // A unilateral downstroke is a brief steering command, not just a shove.
     bird.turnPulse = clamp((bird.turnPulse || 0) + asymmetry * 0.85, -1, 1);
-    const sideways = asymmetry * FLIGHT.lateralImpulsePerWing;
+    const sideways = asymmetry * FLIGHT.lateralImpulsePerWing /
+      massMultiplier;
     bird.velocityX += rightX * sideways;
     bird.velocityY += rightY * sideways;
-    bird.rollRate += asymmetry * FLIGHT.rollImpulse;
+    bird.rollRate += asymmetry * FLIGHT.rollImpulse /
+      massMultiplier;
   }
 
   if (total > 0) {
@@ -240,9 +256,18 @@ export function updateFlightPhysics(bird, dt, world) {
   let airY = bird.velocityY - wind.y;
   let airspeed = Math.hypot(airX, airY);
   const turnAuthority = clamp((airspeed - 5) / 30, 0, 1);
-  const desiredYawRate = FLIGHT.maxTurnRate * turnCommand * turnAuthority *
-    Math.min(1, turningSpan * 1.5);
-  bird.yawRate = ease(bird.yawRate, desiredYawRate, dt, FLIGHT.yawResponse);
+  // Differential wing area first produces BANK. Bank then curves the
+  // actual velocity vector; unequal wing drag adds a small direct yaw.
+  // The fanned tail damps rotation quickly after the steering input ends.
+  const bankTurn = bird.bank / FLIGHT.maxBank;
+  const differentialDragYaw = heldAsymmetry * 0.12 * turnAuthority;
+  const desiredYawRate = clamp(
+    FLIGHT.maxTurnRate * bankTurn * turnAuthority *
+      Math.min(1, turningSpan * 1.5) + differentialDragYaw,
+    -FLIGHT.maxTurnRate, FLIGHT.maxTurnRate
+  );
+  const tailYawResponse = 8 + 15 * bird.tailSpread;
+  bird.yawRate = ease(bird.yawRate, desiredYawRate, dt, tailYawResponse);
   const turnAngle = bird.yawRate * dt;
   bird.heading += turnAngle;
   const cosine = Math.cos(turnAngle);
@@ -267,7 +292,12 @@ export function updateFlightPhysics(bird, dt, world) {
     0.12 * averageArea +
     0.65 * raisedArea +
     (bird.pitch === 'backward' ? 0.62 : 0) +
-    bird.tailSpread * 0.11;
+    // Wider tail is an airbrake; compact tail offers less drag.
+    FLIGHT.tailDragFactor * bird.tailSpread * bird.tailSpread +
+    // A carried item projects into airflow and adds a little form drag.
+    (cargoMassKg > 0 ? 0.12 : 0) +
+    // Simplified induced drag when both lifting surfaces are deployed.
+    0.10 * glideSpan * glideSpan;
   const dragFactor = Math.exp(-drag * dt);
   bird.velocityX = wind.x + (bird.velocityX - wind.x) * dragFactor;
   bird.velocityY = wind.y + (bird.velocityY - wind.y) * dragFactor;
@@ -283,9 +313,19 @@ export function updateFlightPhysics(bird, dt, world) {
   airY = bird.velocityY - wind.y;
   airspeed = Math.hypot(airX, airY);
   bird.airspeed = airspeed;
-  const glideFraction = clamp(
-    (airspeed - FLIGHT.stallSpeed) / 40, 0, 1
+  // Dynamic-pressure-inspired v² term in game units, combined with a
+  // low-speed stall gate. This is NOT Q=0.5*rho*v² in SI because the
+  // horizontal velocities are pixels/s and altitude uses metres.
+  const effectiveStallSpeed = FLIGHT.stallSpeed *
+    (bird.pitch === 'backward' ? 1.25 : 1);
+  const stallFraction = clamp(
+    (airspeed - effectiveStallSpeed) / (FLIGHT.stallSpeed * 0.55),
+    0, 1
   );
+  const dynamicPressureRatio = Math.min(
+    1.8, (airspeed / FLIGHT.airflowReferenceSpeed) ** 2
+  );
+  const glideFraction = stallFraction * dynamicPressureRatio;
   const pitchLift =
     bird.pitch === 'backward' ? 1.12 :
     bird.pitch === 'forward' ? 0.55 : 1;
@@ -293,14 +333,14 @@ export function updateFlightPhysics(bird, dt, world) {
   const liftLimit = FLIGHT.gravity * 0.90;
   const glideLift = Math.min(
     liftLimit,
-    FLIGHT.glidingLift * glideFraction * pitchLift *
-      glideSpan * Math.max(0, Math.cos(bird.bank))
+    (FLIGHT.glidingLift * glideFraction * pitchLift *
+      glideSpan * Math.max(0, Math.cos(bird.bank))) / massMultiplier
   );
-  const updraft = (wind.up || 0) * averageArea;
+  const updraft = ((wind.up || 0) * averageArea) / massMultiplier;
   bird.aeroSpan = glideSpan;
   bird.aeroLift = glideLift;
   bird.aeroState = glideSpan < 0.08 ? 'TUCKED' :
-    airspeed < FLIGHT.stallSpeed ? 'STALL' :
+    airspeed < effectiveStallSpeed ? 'STALL' :
     glideSpan > 0.8 ? 'GLIDE' : 'PARTIAL';
 
   bird.velocityZ += (glideLift + updraft - FLIGHT.gravity) * dt;

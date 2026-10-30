@@ -58,7 +58,7 @@ syncTouchMode();
 
 // Read-only browser Console snapshot for diagnosing real keyboard behaviour.
 window.birdFlightDebug = () => ({
-  version: '0.12.4',
+  version: '0.12.7',
   altitude: Number(bird.altitude.toFixed(3)),
   verticalSpeed: Number(bird.velocityZ.toFixed(3)),
   flaps: bird.totalFlaps,
@@ -88,6 +88,9 @@ window.birdFlightDebug = () => ({
   headingDegrees: Number((bird.heading * 180 / Math.PI).toFixed(1)),
   flightMode: bird.flightMode,
   airspeed: Number((bird.airspeed || 0).toFixed(1)),
+  effectiveMassGrams: Number(((bird.effectiveMassKg || 0.020) * 1000).toFixed(1)),
+  wingArea: Number((bird.aeroSpan || 0).toFixed(2)),
+  aerodynamicLift: Number((bird.aeroLift || 0).toFixed(2)),
   yawRate: Number((bird.yawRate || 0).toFixed(2)),
   heldWingKeys: [...input.pressed].filter(code => /^Numpad[134679]$/.test(code)),
   birdCall: birdsong.status(),
